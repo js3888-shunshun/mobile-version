@@ -33,10 +33,8 @@ export async function ensureActiveOrg(): Promise<boolean> {
     });
 
     if (!orgsRes.ok) {
-      const errBody = await orgsRes.text().catch(() => "");
       debug.error("API", "Failed to list organizations", {
         status: orgsRes.status,
-        body: errBody,
       });
       return false;
     }
@@ -66,10 +64,8 @@ export async function ensureActiveOrg(): Promise<boolean> {
     );
 
     if (!setRes.ok) {
-      const errBody = await setRes.text().catch(() => "");
       debug.error("API", "Failed to set active organization", {
         status: setRes.status,
-        body: errBody,
       });
       return false;
     }
@@ -105,12 +101,18 @@ async function apiFetch<T = unknown>(
   debug.log("API", `Response ${res.status} for ${options.method ?? "GET"} ${path}`);
 
   if (!res.ok) {
-    const err = await res.text();
+    let errMsg = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      errMsg = (body as any)?.error ?? (body as any)?.message ?? JSON.stringify(body);
+    } catch {
+      // response might not be JSON
+    }
     debug.error("API", `Request failed: ${options.method ?? "GET"} ${path}`, {
       status: res.status,
-      body: err,
+      body: errMsg,
     });
-    throw new Error(err);
+    throw new Error(errMsg);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
