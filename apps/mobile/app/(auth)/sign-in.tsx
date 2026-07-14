@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authClient } from "../../lib/auth-client";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { debug } from "../../lib/debug";
 
 export default function SignIn() {
   const insets = useSafeAreaInsets();
@@ -14,18 +15,26 @@ export default function SignIn() {
 
   const handleSignIn = async () => {
     if (!email.trim() || !password.trim()) {
+      debug.warn("SignIn", "Form validation: empty fields");
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
+    debug.info("SignIn", `Attempting sign in for: ${email.trim()}`);
     setLoading(true);
     try {
       const result = await authClient.signIn.email({ email: email.trim(), password });
       if (result.error) {
+        debug.error("SignIn", "Sign in failed", {
+          code: result.error.code,
+          message: result.error.message,
+        });
         Alert.alert("Sign In Failed", result.error.message ?? "Unknown error");
       } else {
+        debug.info("SignIn", "Sign in successful, routing to tabs");
         router.replace("/(tabs)");
       }
     } catch (e: any) {
+      debug.error("SignIn", "Sign in exception", { error: e?.message ?? String(e) });
       Alert.alert("Error", e?.message ?? "Sign in failed");
     } finally {
       setLoading(false);

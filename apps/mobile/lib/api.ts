@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "./auth-client";
+import { debug } from "./debug";
 import type { Ticket } from "@mobile/shared";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
@@ -11,15 +12,25 @@ async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const res = await authClient.$fetch(`${BASE_URL}${path}`, {
+  const url = `${BASE_URL}${path}`;
+  debug.log("API", `${options.method ?? "GET"} ${url}`);
+
+  const res = await authClient.$fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string> | undefined),
     },
   });
+
+  debug.log("API", `Response ${res.status} for ${options.method ?? "GET"} ${path}`);
+
   if (!res.ok) {
     const err = await res.text();
+    debug.error("API", `Request failed: ${options.method ?? "GET"} ${path}`, {
+      status: res.status,
+      body: err,
+    });
     throw new Error(err);
   }
   if (res.status === 204) return undefined as T;
@@ -29,6 +40,7 @@ async function apiFetch<T = unknown>(
 // ─── Tickets ─────────────────────────────────────────────────
 
 export function useTickets() {
+  debug.log("API", "useTickets hook mounted");
   return useQuery({
     queryKey: ["tickets"],
     queryFn: () => apiFetch<Ticket[]>("/api/tickets"),

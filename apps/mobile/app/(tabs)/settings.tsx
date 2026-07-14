@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authClient } from "../../lib/auth-client";
+import { debug } from "../../lib/debug";
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
@@ -14,7 +15,9 @@ export default function Settings() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
+          debug.info("Settings", "Logging out…");
           await authClient.signOut();
+          debug.info("Settings", "Logged out, routing to sign-in");
           router.replace("/sign-in");
         },
       },

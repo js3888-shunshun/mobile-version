@@ -3,7 +3,10 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { registerForPushNotifications } from "../lib/push";
+import { debug } from "../lib/debug";
 import "./globals.css";
+
+debug.info("App", "RootLayout initializing…");
 
 const queryClient = new QueryClient();
 
@@ -17,6 +20,8 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
 
     const Notifications = require("expo-notifications");
 
+    debug.info("NotificationProvider", "Setting up notification handlers…");
+
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
@@ -25,6 +30,7 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
       }),
     });
 
+    debug.info("NotificationProvider", "Registering for push notifications…");
     registerForPushNotifications();
 
     notificationListener.current =

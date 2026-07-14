@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authClient } from "../../lib/auth-client";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { debug } from "../../lib/debug";
 
 export default function SignUp() {
   const insets = useSafeAreaInsets();
@@ -15,13 +16,16 @@ export default function SignUp() {
 
   const handleSignUp = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
+      debug.warn("SignUp", "Form validation: empty fields");
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
     if (password.length < 6) {
+      debug.warn("SignUp", "Password too short");
       Alert.alert("Error", "Password must be at least 6 characters");
       return;
     }
+    debug.info("SignUp", `Attempting sign up for: ${email.trim()}`);
     setLoading(true);
     try {
       const result = await authClient.signUp.email({
@@ -30,11 +34,17 @@ export default function SignUp() {
         password,
       });
       if (result.error) {
+        debug.error("SignUp", "Sign up failed", {
+          code: result.error.code,
+          message: result.error.message,
+        });
         Alert.alert("Sign Up Failed", result.error.message ?? "Unknown error");
       } else {
+        debug.info("SignUp", "Sign up successful, routing to tabs");
         router.replace("/(tabs)");
       }
     } catch (e: any) {
+      debug.error("SignUp", "Sign up exception", { error: e?.message ?? String(e) });
       Alert.alert("Error", e?.message ?? "Sign up failed");
     } finally {
       setLoading(false);

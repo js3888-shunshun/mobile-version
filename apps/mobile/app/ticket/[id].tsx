@@ -8,6 +8,7 @@ import { Badge } from "../../components/ui/badge";
 import { Textarea } from "../../components/ui/textarea";
 import { Label } from "../../components/ui/label";
 import { Card } from "../../components/ui/card";
+import { debug } from "../../lib/debug";
 
 export default function TicketDetail() {
   const insets = useSafeAreaInsets();
@@ -28,10 +29,13 @@ export default function TicketDetail() {
 
   const handleSave = async () => {
     if (!desc.trim()) return Alert.alert("Error", "Description required");
+    debug.info("TicketDetail", `Updating ticket ${id}`, { status });
     try {
       await updateTicket.mutateAsync({ id: id!, description: desc.trim(), status });
+      debug.info("TicketDetail", `Ticket ${id} updated`);
       setEditing(false);
     } catch (e: any) {
+      debug.error("TicketDetail", `Update failed for ticket ${id}`, { error: e?.message });
       Alert.alert("Error", e?.message ?? "Update failed");
     }
   };

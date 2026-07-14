@@ -8,6 +8,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
+import { debug } from "../../lib/debug";
 
 export default function NewTicket() {
   const insets = useSafeAreaInsets();
@@ -19,13 +20,16 @@ export default function NewTicket() {
     if (!description.trim()) {
       return Alert.alert("Error", "Please enter a description");
     }
+    debug.info("NewTicket", "Creating ticket", { status });
     try {
       await createTicket.mutateAsync({
         description: description.trim(),
         status,
       });
+      debug.info("NewTicket", "Ticket created successfully");
       router.back();
     } catch (e: any) {
+      debug.error("NewTicket", "Create ticket failed", { error: e?.message });
       Alert.alert("Error", e?.message ?? "Failed to create ticket");
     }
   };

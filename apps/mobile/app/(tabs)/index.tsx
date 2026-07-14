@@ -12,11 +12,14 @@ import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTickets } from "../../lib/api";
 import { TicketCard } from "../../components/TicketCard";
+import { debug } from "../../lib/debug";
 import type { Ticket } from "@mobile/shared";
 
 export default function TicketList() {
   const insets = useSafeAreaInsets();
   const { data: tickets, isLoading, isError, refetch } = useTickets();
+
+  debug.log("TicketList", `Render — loading=${isLoading}, error=${isError}, count=${tickets?.length ?? 0}`);
 
   const renderItem = ({ item }: { item: Ticket }) => (
     <TouchableOpacity
