@@ -26,16 +26,22 @@ export async function ensureActiveOrg(): Promise<boolean> {
 
   // List user's organizations
   try {
-    // NOTE: better-auth's $fetch already includes the baseURL, so use a relative path
-    const orgsRes = await authClient.$fetch("/api/auth/organization/list", {
+    // Use native fetch for org endpoints (authClient.$fetch may behave differently on web)
+    const orgsRes = await fetch(`${BASE_URL}/api/auth/organization/list`, {
       method: "GET",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
     });
 
     if (!orgsRes.ok) {
-      debug.error("API", "Failed to list organizations", {
-        status: orgsRes.status,
-      });
+      let errMsg = `status=${orgsRes.status}`;
+      try {
+        const b = await orgsRes.json();
+        errMsg += ` body=${JSON.stringify(b)}`;
+      } catch {
+        errMsg += " (no json body)";
+      }
+      debug.error("API", "Failed to list organizations: " + errMsg);
       return false;
     }
 
@@ -54,19 +60,22 @@ export async function ensureActiveOrg(): Promise<boolean> {
     const orgId = orgs[0].id;
     debug.info("API", `Auto-selecting organization: ${orgs[0].name} (${orgId})`);
 
-    const setRes = await authClient.$fetch(
-      "/api/auth/organization/set-active",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: orgId }),
-      },
-    );
+    const setRes = await fetch(`${BASE_URL}/api/auth/organization/set-active`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: orgId }),
+    });
 
     if (!setRes.ok) {
-      debug.error("API", "Failed to set active organization", {
-        status: setRes.status,
-      });
+      let errMsg = `status=${setRes.status}`;
+      try {
+        const b = await setRes.json();
+        errMsg += ` body=${JSON.stringify(b)}`;
+      } catch {
+        errMsg += " (no json body)";
+      }
+      debug.error("API", "Failed to set active organization: " + errMsg);
       return false;
     }
 
