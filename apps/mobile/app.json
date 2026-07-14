@@ -10,11 +10,21 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "color": "#E6F4FE",
+          "defaultChannel": "default"
+        }
+      ],
+      "expo-web-browser"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mobileversion.app"
+      "bundleIdentifier": "com.mobileversion.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -27,6 +37,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "73d81bfd-504b-4763-8038-521fe82ca453"
+      }
     }
   }
 }

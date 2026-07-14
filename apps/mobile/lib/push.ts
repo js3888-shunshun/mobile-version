@@ -1,14 +1,15 @@
 import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
 import { authClient } from "./auth-client";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000";
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
 
 /**
- * Request notification permissions and register the Expo push token
- * with our server.
+ * Register for push notifications. No-op on web.
  */
 export async function registerForPushNotifications(): Promise<string | null> {
+  if (Platform.OS === "web") return null;
+
+  const Notifications = require("expo-notifications");
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 

@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "./auth-client";
 import type { Ticket } from "@mobile/shared";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000";
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
 
 /**
  * Thin wrapper around authClient.$fetch that adds JSON headers.

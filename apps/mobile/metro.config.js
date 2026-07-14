@@ -7,6 +7,9 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
+// better-auth compatibility — its package exports resolve to .mjs files
+config.resolver.sourceExts = [...config.resolver.sourceExts, "mjs", "cjs"];
+
 // pnpm workspace compatibility
 config.watchFolders = [
   path.resolve(monorepoRoot, "packages"),

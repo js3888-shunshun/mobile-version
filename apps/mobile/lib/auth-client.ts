@@ -1,18 +1,31 @@
 import { createAuthClient } from "better-auth/react";
-import { expoClient } from "@better-auth/expo/client";
-import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
-// Point at our mobile-version server.
-// In production, use the deployed URL from BETTER_AUTH_URL env.
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000";
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
 
-export const authClient = createAuthClient({
-  baseURL: BASE_URL,
-  plugins: [
-    expoClient({
-      scheme: "mobileversion",
-      storagePrefix: "mobileversion",
-      storage: SecureStore,
-    }),
-  ],
-});
+let authClient: ReturnType<typeof createAuthClient>;
+
+if (Platform.OS === "web") {
+  // Web: cookie-based auth with credentials: "include" for cross-origin
+  authClient = createAuthClient({
+    baseURL: BASE_URL,
+    fetchOptions: { credentials: "include" },
+  });
+} else {
+  // Native: use expo plugin with SecureStore
+  const { expoClient } = require("@better-auth/expo/client");
+  const SecureStore = require("expo-secure-store");
+
+  authClient = createAuthClient({
+    baseURL: BASE_URL,
+    plugins: [
+      expoClient({
+        scheme: "mobileversion",
+        storagePrefix: "mobileversion",
+        storage: SecureStore,
+      }),
+    ],
+  });
+}
+
+export { authClient };

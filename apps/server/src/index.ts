@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import {
   db,
   tickets,
@@ -12,8 +13,20 @@ import {
 } from "@mobile/db";
 import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "./auth.js";
+import { sendTicketNotification } from "./push.js";
 
 const app = Fastify({ logger: true });
+
+await app.register(cors, {
+  origin: [
+    "http://localhost:8081",
+    "http://172.105.135.182:8081",
+    "http://localhost:4000",
+    "http://172.105.135.182:4000",
+    "http://localhost:5173",
+  ],
+  credentials: true,
+});
 
 // ─── Health ────────────────────────────────────────────────────────────
 
@@ -164,7 +177,10 @@ app.post("/api/tickets", async (request, reply) => {
     })
     .returning();
 
-  // Phase 3: push notification dispatch goes here
+  // Fire push notification (don't block response)
+  sendTicketNotification(ctx.orgId, ticket.id, "created").catch((err) =>
+    app.log.error(err, "push notification failed"),
+  );
 
   return reply.status(201).send(ticket);
 });
@@ -198,7 +214,10 @@ app.patch("/api/tickets/:id", async (request, reply) => {
     .where(eq(tickets.id, id))
     .returning();
 
-  // Phase 3: push notification dispatch goes here
+  // Fire push notification (don't block response)
+  sendTicketNotification(ctx.orgId, id, "updated").catch((err) =>
+    app.log.error(err, "push notification failed"),
+  );
 
   return updated;
 });

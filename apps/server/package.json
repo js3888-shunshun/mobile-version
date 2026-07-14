@@ -10,6 +10,7 @@
     "start": "dotenv -e ../../.env -- node dist/index.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.0",
     "@mobile/db": "workspace:*",
     "better-auth": "^1.6.23",
     "dotenv": "^17.4.2",
