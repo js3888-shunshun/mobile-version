@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.expo/
+*.tsbuildinfo
+
+# Drizzle
+packages/db/drizzle/meta/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Expo
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/android/
+apps/mobile/ios/
