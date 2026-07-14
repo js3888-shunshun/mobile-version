@@ -90,17 +90,19 @@ export async function ensureActiveOrg(): Promise<boolean> {
 }
 
 /**
- * Thin wrapper around authClient.$fetch that adds JSON headers.
+ * Thin wrapper around native fetch for API calls.
+ * Uses credentials: "include" so browser sends session cookies.
  */
 async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  // better-auth's $fetch prepends its own baseURL, so use relative path
-  debug.log("API", `${options.method ?? "GET"} ${path}`);
+  const url = `${BASE_URL}${path}`;
+  debug.log("API", `${options.method ?? "GET"} ${url}`);
 
-  const res = await authClient.$fetch(path, {
+  const res = await fetch(url, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string> | undefined),
