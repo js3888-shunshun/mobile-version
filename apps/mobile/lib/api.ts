@@ -26,16 +26,18 @@ export async function ensureActiveOrg(): Promise<boolean> {
 
   // List user's organizations
   try {
-    const orgsRes = await authClient.$fetch(
-      `${BASE_URL}/api/auth/organization/list`,
-      {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    // NOTE: better-auth's $fetch already includes the baseURL, so use a relative path
+    const orgsRes = await authClient.$fetch("/api/auth/organization/list", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
 
     if (!orgsRes.ok) {
-      debug.error("API", "Failed to list organizations", { status: orgsRes.status });
+      const errBody = await orgsRes.text().catch(() => "");
+      debug.error("API", "Failed to list organizations", {
+        status: orgsRes.status,
+        body: errBody,
+      });
       return false;
     }
 
@@ -55,7 +57,7 @@ export async function ensureActiveOrg(): Promise<boolean> {
     debug.info("API", `Auto-selecting organization: ${orgs[0].name} (${orgId})`);
 
     const setRes = await authClient.$fetch(
-      `${BASE_URL}/api/auth/organization/set-active`,
+      "/api/auth/organization/set-active",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -64,8 +66,10 @@ export async function ensureActiveOrg(): Promise<boolean> {
     );
 
     if (!setRes.ok) {
+      const errBody = await setRes.text().catch(() => "");
       debug.error("API", "Failed to set active organization", {
         status: setRes.status,
+        body: errBody,
       });
       return false;
     }
@@ -87,10 +91,10 @@ async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const url = `${BASE_URL}${path}`;
-  debug.log("API", `${options.method ?? "GET"} ${url}`);
+  // better-auth's $fetch prepends its own baseURL, so use relative path
+  debug.log("API", `${options.method ?? "GET"} ${path}`);
 
-  const res = await authClient.$fetch(url, {
+  const res = await authClient.$fetch(path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
