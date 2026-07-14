@@ -6,6 +6,81 @@ import type { Ticket } from "@mobile/shared";
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
 
 /**
+ * Ensure the user has an active organization set in their session.
+ * If not, auto-select the first available organization.
+ * Returns true if an active org is now set, false if user has no orgs.
+ */
+export async function ensureActiveOrg(): Promise<boolean> {
+  debug.info("API", "ensureActiveOrg: checking session…");
+
+  // Check current session
+  const sessionRes = await authClient.getSession();
+  const session = sessionRes.data?.session as Record<string, unknown> | undefined;
+
+  if (session?.activeOrganizationId) {
+    debug.info("API", `Active org already set: ${session.activeOrganizationId}`);
+    return true;
+  }
+
+  debug.info("API", "No active org, listing organizations…");
+
+  // List user's organizations
+  try {
+    const orgsRes = await authClient.$fetch(
+      `${BASE_URL}/api/auth/organization/list`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    if (!orgsRes.ok) {
+      debug.error("API", "Failed to list organizations", { status: orgsRes.status });
+      return false;
+    }
+
+    const orgs: Array<{ id: string; name: string; slug: string }> = await orgsRes.json();
+
+    debug.info("API", `Found ${orgs.length} organizations`, {
+      orgs: orgs.map((o) => ({ id: o.id, name: o.name })),
+    });
+
+    if (orgs.length === 0) {
+      debug.warn("API", "User has no organizations");
+      return false;
+    }
+
+    // Auto-select the first organization
+    const orgId = orgs[0].id;
+    debug.info("API", `Auto-selecting organization: ${orgs[0].name} (${orgId})`);
+
+    const setRes = await authClient.$fetch(
+      `${BASE_URL}/api/auth/organization/set-active`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId: orgId }),
+      },
+    );
+
+    if (!setRes.ok) {
+      debug.error("API", "Failed to set active organization", {
+        status: setRes.status,
+      });
+      return false;
+    }
+
+    debug.info("API", "Active organization set successfully");
+    return true;
+  } catch (err: any) {
+    debug.error("API", "ensureActiveOrg exception", {
+      error: err?.message ?? String(err),
+    });
+    return false;
+  }
+}
+
+/**
  * Thin wrapper around authClient.$fetch that adds JSON headers.
  */
 async function apiFetch<T = unknown>(

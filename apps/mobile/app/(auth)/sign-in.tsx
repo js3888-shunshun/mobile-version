@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authClient } from "../../lib/auth-client";
+import { ensureActiveOrg } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { debug } from "../../lib/debug";
@@ -30,7 +31,15 @@ export default function SignIn() {
         });
         Alert.alert("Sign In Failed", result.error.message ?? "Unknown error");
       } else {
-        debug.info("SignIn", "Sign in successful, routing to tabs");
+        debug.info("SignIn", "Sign in successful, setting up workspace…");
+        const ok = await ensureActiveOrg();
+        debug.info("SignIn", `Org setup: ${ok ? "success" : "no orgs found"}`);
+        if (!ok) {
+          Alert.alert(
+            "No Workspace",
+            "You are not a member of any organization. Please ask an admin to invite you.",
+          );
+        }
         router.replace("/(tabs)");
       }
     } catch (e: any) {
