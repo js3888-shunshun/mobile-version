@@ -51,7 +51,11 @@ export default function TicketDetail() {
           try {
             await deleteTicket.mutateAsync(id!);
             debug.info("TicketDetail", `Ticket ${id} deleted, navigating back`);
-            router.back();
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/(tabs)");
+            }
           } catch (e: any) {
             debug.error("TicketDetail", `Delete failed for ticket ${id}`, {
               error: e?.message ?? String(e),
@@ -104,7 +108,13 @@ export default function TicketDetail() {
       {/* Back button */}
       <View className="flex-row items-center px-2 py-2 bg-white border-b border-gray-200">
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/(tabs)");
+            }
+          }}
           className="px-3 py-2"
         >
           <Text className="text-base text-blue-600 font-semibold">← Back</Text>

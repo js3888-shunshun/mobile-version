@@ -27,7 +27,11 @@ export default function NewTicket() {
         status,
       });
       debug.info("NewTicket", "Ticket created successfully");
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)");
+      }
     } catch (e: any) {
       debug.error("NewTicket", "Create ticket failed", { error: e?.message });
       Alert.alert("Error", e?.message ?? "Failed to create ticket");
@@ -45,7 +49,13 @@ export default function NewTicket() {
       {/* Back button */}
       <View className="flex-row items-center px-2 py-2 bg-white border-b border-gray-200">
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/(tabs)");
+            }
+          }}
           className="px-3 py-2"
         >
           <Text className="text-base text-blue-600 font-semibold">← Back</Text>
