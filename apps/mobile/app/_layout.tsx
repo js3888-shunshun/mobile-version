@@ -71,14 +71,13 @@ export default function RootLayout() {
           <Stack.Screen
             name="ticket/new"
             options={{
-              headerShown: true,
+              headerShown: false,
               title: "New Ticket",
-              presentation: "modal",
             }}
           />
           <Stack.Screen
             name="ticket/[id]"
-            options={{ headerShown: true, title: "Ticket" }}
+            options={{ headerShown: false, title: "Ticket" }}
           />
         </Stack>
       </NotificationProvider>

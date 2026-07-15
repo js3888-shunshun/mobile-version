@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Alert } from "react-native";
+import { View, Alert, Text, TouchableOpacity } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCreateTicket } from "../../lib/api";
@@ -42,6 +42,17 @@ export default function NewTicket() {
 
   return (
     <View className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom }}>
+      {/* Back button */}
+      <View className="flex-row items-center px-2 py-2 bg-white border-b border-gray-200">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="px-3 py-2"
+        >
+          <Text className="text-base text-blue-600 font-semibold">← Back</Text>
+        </TouchableOpacity>
+        <Text className="text-lg font-bold ml-2">New Ticket</Text>
+      </View>
+
       <Card className="mx-4 mt-4 gap-4">
         <Textarea
           label="Description"

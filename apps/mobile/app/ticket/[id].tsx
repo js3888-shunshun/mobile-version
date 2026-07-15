@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, Alert, ActivityIndicator } from "react-native";
+import { View, Text, Alert, ActivityIndicator, TouchableOpacity } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTicket, useUpdateTicket, useDeleteTicket } from "../../lib/api";
@@ -47,10 +47,15 @@ export default function TicketDetail() {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
+          debug.info("TicketDetail", `Deleting ticket ${id}`);
           try {
             await deleteTicket.mutateAsync(id!);
+            debug.info("TicketDetail", `Ticket ${id} deleted, navigating back`);
             router.back();
           } catch (e: any) {
+            debug.error("TicketDetail", `Delete failed for ticket ${id}`, {
+              error: e?.message ?? String(e),
+            });
             Alert.alert("Error", e?.message ?? "Delete failed");
           }
         },
@@ -96,6 +101,17 @@ export default function TicketDetail() {
 
   return (
     <View className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom }}>
+      {/* Back button */}
+      <View className="flex-row items-center px-2 py-2 bg-white border-b border-gray-200">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="px-3 py-2"
+        >
+          <Text className="text-base text-blue-600 font-semibold">← Back</Text>
+        </TouchableOpacity>
+        <Text className="text-lg font-bold ml-2">Ticket Detail</Text>
+      </View>
+
       {editing ? (
         <Card className="mx-4 mt-4 gap-4">
           <Textarea
