@@ -25,6 +25,7 @@ await app.register(cors, {
     "http://172.105.135.182:4000",
     "http://localhost:5173",
   ],
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   credentials: true,
 });
 
