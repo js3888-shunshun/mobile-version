@@ -1,4 +1,5 @@
 const { getDefaultConfig } = require("expo/metro-config");
+const { withNativeWind } = require("nativewind/metro");
 const path = require("path");
 
 const projectRoot = __dirname;
@@ -6,7 +7,7 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
-// better-auth compatibility
+// better-auth compatibility — its package exports resolve to .mjs files
 config.resolver.sourceExts = [...config.resolver.sourceExts, "mjs", "cjs"];
 
 // pnpm workspace compatibility
@@ -22,12 +23,16 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, "node_modules"),
 ];
 
-// Singleton pinning
+// Singleton pinning — prevents "Invalid hook call" errors
 const singletons = ["react", "react-native", "expo", "expo-router"];
 config.resolver.extraNodeModules = singletons.reduce((acc, name) => {
   acc[name] = path.resolve(projectRoot, "node_modules", name);
   return acc;
 }, {});
 
-// TEMPORARY: NativeWind disabled to isolate build error
-module.exports = config;
+// forceWriteFileSystem: true skips react-native-css-interop's virtual module
+// system which can crash during EAS Build with "transformFile" error.
+module.exports = withNativeWind(config, {
+  input: "./app/globals.css",
+  forceWriteFileSystem: true,
+});
