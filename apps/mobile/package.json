@@ -7,7 +7,8 @@
     "start": "EXPO_NO_METRO_WORKSPACE_ROOT=true expo start",
     "android": "EXPO_NO_METRO_WORKSPACE_ROOT=true expo start --android",
     "ios": "EXPO_NO_METRO_WORKSPACE_ROOT=true expo start --ios",
-    "web": "EXPO_NO_METRO_WORKSPACE_ROOT=true expo start --web"
+    "web": "EXPO_NO_METRO_WORKSPACE_ROOT=true expo start --web",
+    "postinstall": "node scripts/patch-css-interop.js"
   },
   "dependencies": {
     "@better-auth/expo": "^1.6.23",
@@ -40,6 +41,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@react-native-community/cli": "^20.2.0",
     "@react-native-reusables/cli": "^0.7.1",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"

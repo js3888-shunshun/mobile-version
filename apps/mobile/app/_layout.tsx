@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { registerForPushNotifications } from "../lib/push";
 import { debug } from "../lib/debug";
-import "./globals.css";
+// import "./globals.css"; // TEMP: disabled for NativeWind isolation test
 
 debug.info("App", "RootLayout initializing…");
 
