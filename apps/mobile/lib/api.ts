@@ -98,35 +98,54 @@ async function apiFetch<T = unknown>(
   options: RequestInit = {},
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
-  debug.log("API", `${options.method ?? "GET"} ${url}`);
+  const method = options.method ?? "GET";
+  const hasBody = options.body != null;
 
-  const res = await fetch(url, {
-    ...options,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers as Record<string, string> | undefined),
-    },
-  });
+  const headers: Record<string, string> = {
+    ...(hasBody && { "Content-Type": "application/json" }),
+    ...(options.headers as Record<string, string> | undefined),
+  };
 
-  debug.log("API", `Response ${res.status} for ${options.method ?? "GET"} ${path}`);
+  debug.log("API", `${method} ${url}`, { hasBody, headers });
 
-  if (!res.ok) {
-    let errMsg = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      errMsg = (body as any)?.error ?? (body as any)?.message ?? JSON.stringify(body);
-    } catch {
-      // response might not be JSON
-    }
-    debug.error("API", `Request failed: ${options.method ?? "GET"} ${path}`, {
-      status: res.status,
-      body: errMsg,
+  try {
+    const res = await fetch(url, {
+      ...options,
+      credentials: "include",
+      headers,
     });
-    throw new Error(errMsg);
+
+    debug.log("API", `Response ${res.status} ${method} ${path}`);
+
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      let rawBody = "";
+      try {
+        rawBody = await res.text();
+        const parsed = JSON.parse(rawBody);
+        errMsg = parsed?.error ?? parsed?.message ?? JSON.stringify(parsed);
+      } catch {
+        errMsg = rawBody || errMsg;
+      }
+      debug.error("API", `${method} ${path} FAILED`, {
+        status: res.status,
+        rawBody: rawBody.substring(0, 500),
+        errMsg,
+      });
+      throw new Error(errMsg);
+    }
+    if (res.status === 204) return undefined as T;
+    return res.json();
+  } catch (e: any) {
+    if (e instanceof TypeError || e?.name === "TypeError" || e?.message?.includes("fetch")) {
+      debug.error("API", `${method} ${path} NETWORK ERROR`, {
+        error: e?.message ?? String(e),
+        url,
+      });
+      throw new Error(`Network: ${e?.message ?? "Failed to fetch"}`);
+    }
+    throw e;
   }
-  if (res.status === 204) return undefined as T;
-  return res.json();
 }
 
 // ─── Tickets ─────────────────────────────────────────────────
@@ -184,5 +203,26 @@ export function useDeleteTicket() {
     mutationFn: (id: string) =>
       apiFetch<void>(`/api/tickets/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tickets"] }),
+  });
+}
+
+// ─── Organization ────────────────────────────────────────────
+
+export function useOrgName() {
+  const { data: session } = authClient.useSession();
+
+  return useQuery({
+    queryKey: ["org-name", (session?.session as any)?.activeOrganizationId],
+    queryFn: async () => {
+      const activeOrgId = (session?.session as any)?.activeOrganizationId as string | undefined;
+      if (!activeOrgId) return null;
+
+      const orgs = await apiFetch<Array<{ id: string; name: string; slug: string }>>(
+        "/api/auth/organization/list",
+      );
+      const org = orgs.find((o) => o.id === activeOrgId);
+      return org?.name ?? null;
+    },
+    enabled: !!session,
   });
 }

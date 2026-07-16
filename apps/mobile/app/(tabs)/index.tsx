@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback } from "react";
 import {
   View,
   Text,
@@ -8,10 +8,10 @@ import {
   RefreshControl,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTickets } from "../../lib/api";
 import { TicketCard } from "../../components/TicketCard";
+import { Button } from "../../components/ui/button";
 import { debug } from "../../lib/debug";
 import type { Ticket } from "@mobile/shared";
 
@@ -32,7 +32,6 @@ export default function TicketList() {
 
   const renderEmpty = () => (
     <View className="flex-1 items-center justify-center py-20">
-      <Text className="text-4xl mb-4">📝</Text>
       <Text className="text-lg font-semibold text-gray-500 mb-1">No tickets yet</Text>
       <Text className="text-sm text-gray-400">
         Tap + to create your first ticket
@@ -45,12 +44,13 @@ export default function TicketList() {
       {/* Header */}
       <View className="flex-row justify-between items-center px-4 py-3 bg-white border-b border-gray-200">
         <Text className="text-lg font-bold">Tickets</Text>
-        <TouchableOpacity
-          className="bg-black rounded-full w-8 h-8 items-center justify-center"
+        <Button
+          size="icon"
+          className="w-8 h-8 rounded-full"
           onPress={() => router.push("/ticket/new")}
         >
-          <Text className="text-white text-xl font-bold">+</Text>
-        </TouchableOpacity>
+          <Text className="text-white text-lg font-bold">+</Text>
+        </Button>
       </View>
 
       {isLoading ? (
@@ -60,9 +60,9 @@ export default function TicketList() {
       ) : isError ? (
         <View className="flex-1 items-center justify-center">
           <Text className="text-red-500 mb-2">Failed to load tickets</Text>
-          <TouchableOpacity onPress={() => refetch()}>
-            <Text className="text-blue-600 font-semibold">Retry</Text>
-          </TouchableOpacity>
+          <Button variant="outline" onPress={() => refetch()}>
+            Retry
+          </Button>
         </View>
       ) : (
         <FlatList

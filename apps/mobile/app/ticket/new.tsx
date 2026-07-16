@@ -76,12 +76,13 @@ export default function NewTicket() {
           <Label>Status</Label>
           <View className="flex-row gap-2">
             {statuses.map(({ key, variant }) => (
-              <Badge
-                key={key}
-                variant={status === key ? variant : "outline"}
-              >
-                {key}
-              </Badge>
+              <TouchableOpacity key={key} onPress={() => setStatus(key)}>
+                <Badge
+                  variant={status === key ? variant : "outline"}
+                >
+                  {key}
+                </Badge>
+              </TouchableOpacity>
             ))}
           </View>
         </View>

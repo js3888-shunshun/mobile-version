@@ -41,25 +41,32 @@ export default function TicketDetail() {
   };
 
   const handleDelete = () => {
+    debug.info("TicketDetail", "handleDelete called, id=" + id);
+    // Use window.confirm on web, Alert.alert on native
+    if (typeof window !== "undefined" && window.confirm) {
+      if (!window.confirm("Delete this ticket? This cannot be undone.")) return;
+      deleteTicket.mutateAsync(id!).then(() => {
+        debug.info("TicketDetail", "Deleted, navigating back");
+        if (router.canGoBack()) router.back();
+        else router.replace("/(tabs)");
+      }).catch((e: any) => {
+        debug.error("TicketDetail", "Delete failed", { error: e?.message ?? String(e) });
+        Alert.alert("Error", e?.message ?? "Delete failed");
+      });
+      return;
+    }
+    // Native: use Alert.alert
     Alert.alert("Delete Ticket", "This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          debug.info("TicketDetail", `Deleting ticket ${id}`);
           try {
             await deleteTicket.mutateAsync(id!);
-            debug.info("TicketDetail", `Ticket ${id} deleted, navigating back`);
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace("/(tabs)");
-            }
+            if (router.canGoBack()) router.back();
+            else router.replace("/(tabs)");
           } catch (e: any) {
-            debug.error("TicketDetail", `Delete failed for ticket ${id}`, {
-              error: e?.message ?? String(e),
-            });
             Alert.alert("Error", e?.message ?? "Delete failed");
           }
         },
@@ -70,6 +77,14 @@ export default function TicketDetail() {
   const handleApprove = async () => {
     try {
       await updateTicket.mutateAsync({ id: id!, status: "approved" });
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Failed");
+    }
+  };
+
+  const handleReject = async () => {
+    try {
+      await updateTicket.mutateAsync({ id: id!, status: "rejected" });
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Failed");
     }
@@ -134,12 +149,13 @@ export default function TicketDetail() {
             <Label>Status</Label>
             <View className="flex-row gap-2">
               {statuses.map(({ key, variant }) => (
-                <Badge
-                  key={key}
-                  variant={status === key ? variant : "outline"}
-                >
-                  {key}
-                </Badge>
+                <TouchableOpacity key={key} onPress={() => setStatus(key)}>
+                  <Badge
+                    variant={status === key ? variant : "outline"}
+                  >
+                    {key}
+                  </Badge>
+                </TouchableOpacity>
               ))}
             </View>
           </View>
@@ -184,7 +200,17 @@ export default function TicketDetail() {
                 onPress={handleApprove}
                 disabled={updateTicket.isPending}
               >
-                ✓ Approve
+                Approve
+              </Button>
+            )}
+            {ticket.status !== "rejected" && (
+              <Button
+                className="flex-1"
+                variant="secondary"
+                onPress={handleReject}
+                disabled={updateTicket.isPending}
+              >
+                Reject
               </Button>
             )}
             <Button

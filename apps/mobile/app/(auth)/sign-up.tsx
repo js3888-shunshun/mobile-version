@@ -6,6 +6,7 @@ import { authClient } from "../../lib/auth-client";
 import { ensureActiveOrg } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Card } from "../../components/ui/card";
 import { debug } from "../../lib/debug";
 
 export default function SignUp() {
@@ -68,37 +69,39 @@ export default function SignUp() {
       <Text className="text-3xl font-bold text-center mb-2">Create Account</Text>
       <Text className="text-gray-500 text-center mb-8">Join your organization</Text>
 
-      <Input
-        label="Name"
-        placeholder="Your name"
-        value={name}
-        onChangeText={setName}
-      />
+      <Card className="gap-4">
+        <Input
+          label="Name"
+          placeholder="Your name"
+          value={name}
+          onChangeText={setName}
+        />
 
-      <Input
-        label="Email"
-        placeholder="you@example.com"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
+        <Input
+          label="Email"
+          placeholder="you@example.com"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
 
-      <Input
-        label="Password"
-        placeholder="At least 6 characters"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+        <Input
+          label="Password"
+          placeholder="At least 6 characters"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-      <Button
-        onPress={handleSignUp}
-        disabled={loading}
-        className="w-full"
-      >
-        {loading ? "Creating account..." : "Sign Up"}
-      </Button>
+        <Button
+          onPress={handleSignUp}
+          disabled={loading}
+          className="w-full"
+        >
+          {loading ? "Creating account..." : "Sign Up"}
+        </Button>
+      </Card>
 
       <View className="h-4" />
 

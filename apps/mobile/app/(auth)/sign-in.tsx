@@ -6,6 +6,8 @@ import { authClient } from "../../lib/auth-client";
 import { ensureActiveOrg } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Card } from "../../components/ui/card";
+import { Separator } from "../../components/ui/separator";
 import { debug } from "../../lib/debug";
 
 export default function SignIn() {
@@ -58,30 +60,32 @@ export default function SignIn() {
       <Text className="text-3xl font-bold text-center mb-2">Mobile Tickets</Text>
       <Text className="text-gray-500 text-center mb-8">Sign in to your account</Text>
 
-      <Input
-        label="Email"
-        placeholder="you@example.com"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
+      <Card className="gap-4">
+        <Input
+          label="Email"
+          placeholder="you@example.com"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
 
-      <Input
-        label="Password"
-        placeholder="Your password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+        <Input
+          label="Password"
+          placeholder="Your password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-      <Button
-        onPress={handleSignIn}
-        disabled={loading}
-        className="w-full"
-      >
-        {loading ? "Signing in..." : "Sign In"}
-      </Button>
+        <Button
+          onPress={handleSignIn}
+          disabled={loading}
+          className="w-full"
+        >
+          {loading ? "Signing in..." : "Sign In"}
+        </Button>
+      </Card>
 
       <View className="h-4" />
 
