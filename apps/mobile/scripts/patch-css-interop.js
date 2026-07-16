@@ -1,53 +1,59 @@
 /**
- * Patch react-native-css-interop to handle undefined bundler during EAS Build.
- * Ref: "Cannot read properties of undefined (reading 'transformFile')"
+ * Patch react-native-css-interop AND @expo/cli to handle undefined bundler
+ * during EAS Build. Fixes "Cannot read properties of undefined (reading
+ * 'transformFile')" error during Xcode "Run fastlane" phase.
  */
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
-// Try finding the files using find command (works on macOS and Linux)
-try {
-  const result = execSync(
-    'find node_modules -path "*/react-native-css-interop/dist/metro/index.js" 2>/dev/null || true',
-    { encoding: "utf8", cwd: path.resolve(__dirname, "..") }
-  );
-  const files = result.trim().split("\n").filter(Boolean);
+const patches = [
+  {
+    // react-native-css-interop: ensureBundlerPatched accesses bundler.transformFile
+    pattern: "*/react-native-css-interop/dist/metro/index.js",
+    find: "if (bundler.transformFile.__css_interop__patched)",
+    replace: "if (!bundler || bundler.transformFile.__css_interop__patched)",
+  },
+  {
+    // @expo/cli metroVirtualModules: patches bundler.transformFile without null check
+    pattern: "*/@expo/cli/build/src/start/server/metro/metroVirtualModules.js",
+    find: "if (!bundler.transformFile.__patched)",
+    replace: "if (bundler && bundler.transformFile && !bundler.transformFile.__patched)",
+  },
+];
 
-  // Also search in monorepo root if applicable
-  const monorepoRoot = path.resolve(__dirname, "..", "..", "..");
-  const result2 = execSync(
-    'find node_modules -path "*/react-native-css-interop/dist/metro/index.js" 2>/dev/null || true',
-    { encoding: "utf8", cwd: monorepoRoot }
-  );
-  files.push(...result2.trim().split("\n").filter(Boolean));
+const searchRoots = [
+  path.resolve(__dirname, "..", "node_modules"),
+  path.resolve(__dirname, "..", "..", "..", "node_modules"), // monorepo root
+];
 
-  const OLD = "if (bundler.transformFile.__css_interop__patched)";
-  const NEW = "if (!bundler || bundler.transformFile.__css_interop__patched)";
-
-  const unique = [...new Set(files)];
-  if (unique.length === 0) {
-    console.log("[patch-css-interop] No react-native-css-interop files found");
-    process.exit(0);
-  }
-
-  for (const file of unique) {
-    const absPath = file.startsWith("/") ? file : path.resolve(monorepoRoot, file);
+for (const root of searchRoots) {
+  for (const { pattern, find, replace } of patches) {
     try {
-      let content = fs.readFileSync(absPath, "utf8");
-      if (content.includes("!bundler ||")) {
-        console.log("[patch-css-interop] Already patched:", absPath);
-        continue;
+      const result = execSync(
+        `find "${root}" -path "${pattern}" 2>/dev/null || true`,
+        { encoding: "utf8" }
+      );
+      const files = result.trim().split("\n").filter(Boolean);
+      for (const file of files) {
+        try {
+          let content = fs.readFileSync(file, "utf8");
+          if (content.includes(replace)) {
+            console.log("[patch] Already patched:", path.basename(file));
+            continue;
+          }
+          if (content.includes(find)) {
+            const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            content = content.replace(new RegExp(escaped, "g"), replace);
+            fs.writeFileSync(file, content, "utf8");
+            console.log("[patch] PATCHED:", file);
+          }
+        } catch (e) {
+          console.warn("[patch] Failed:", file, e.message);
+        }
       }
-      if (content.includes(OLD)) {
-        content = content.replace(new RegExp(OLD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g"), NEW);
-        fs.writeFileSync(absPath, content, "utf8");
-        console.log("[patch-css-interop] PATCHED:", absPath);
-      }
-    } catch (e) {
-      console.warn("[patch-css-interop] Failed:", absPath, e.message);
+    } catch {
+      // find command failed, skip
     }
   }
-} catch (e) {
-  console.warn("[patch-css-interop] Script error:", e.message);
 }
