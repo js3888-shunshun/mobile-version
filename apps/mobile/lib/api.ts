@@ -2,10 +2,42 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "./auth-client";
 import { debug } from "./debug";
 import { useOrgStore } from "./org-store";
-import * as SecureStore from "expo-secure-store";
 import type { Ticket } from "@mobile/shared";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
+
+/**
+ * better-auth's $fetch returns { data, error } (not a Response).
+ * This wraps it to return data on success and throw on error.
+ */
+async function authFetch<T = unknown>(
+  url: string,
+  options: RequestInit & { method?: string } = {},
+): Promise<T> {
+  const method = options.method ?? "GET";
+
+  const result = await authClient.$fetch(url, {
+    ...options,
+    method,
+    headers: {
+      "Origin": BASE_URL,
+      ...(options.body != null && { "Content-Type": "application/json" }),
+      ...(options.headers as Record<string, string> | undefined),
+    },
+  });
+
+  if (result.error) {
+    const err = result.error as { status?: number; statusText?: string; message?: string };
+    debug.error("API", `${method} ${url} FAILED`, {
+      status: err.status,
+      message: err.message ?? err.statusText ?? "Unknown error",
+    });
+    throw new Error(err.message ?? `HTTP ${err.status ?? "error"}`);
+  }
+
+  // result.data is the JSON body
+  return (result as { data: T }).data;
+}
 
 /**
  * Ensure the user has an active organization set in their session.
@@ -28,25 +60,10 @@ export async function ensureActiveOrg(): Promise<boolean> {
 
   // List user's organizations
   try {
-    const cookie = await getSessionCookieHeader();
-    const orgsRes = await fetch(`${BASE_URL}/api/auth/organization/list`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json", "Origin": BASE_URL, ...(cookie ? { cookie } : {}) },
-    });
-
-    if (!orgsRes.ok) {
-      let errMsg = `status=${orgsRes.status}`;
-      try {
-        const b = await orgsRes.json();
-        errMsg += ` body=${JSON.stringify(b)}`;
-      } catch {
-        errMsg += " (no json body)";
-      }
-      debug.error("API", "Failed to list organizations: " + errMsg);
-      return false;
-    }
-
-    const orgs: Array<{ id: string; name: string; slug: string }> = await orgsRes.json();
+    const orgs = await authFetch<Array<{ id: string; name: string; slug: string }>>(
+      `${BASE_URL}/api/auth/organization/list`,
+      { method: "GET" },
+    );
 
     debug.info("API", `Found ${orgs.length} organizations`, {
       orgs: orgs.map((o) => ({ id: o.id, name: o.name })),
@@ -61,23 +78,10 @@ export async function ensureActiveOrg(): Promise<boolean> {
     const orgId = orgs[0].id;
     debug.info("API", `Auto-selecting organization: ${orgs[0].name} (${orgId})`);
 
-    const setRes = await fetch(`${BASE_URL}/api/auth/organization/set-active`, {
+    await authFetch(`${BASE_URL}/api/auth/organization/set-active`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Origin": BASE_URL, ...(cookie ? { cookie } : {}) },
       body: JSON.stringify({ organizationId: orgId }),
     });
-
-    if (!setRes.ok) {
-      let errMsg = `status=${setRes.status}`;
-      try {
-        const b = await setRes.json();
-        errMsg += ` body=${JSON.stringify(b)}`;
-      } catch {
-        errMsg += " (no json body)";
-      }
-      debug.error("API", "Failed to set active organization: " + errMsg);
-      return false;
-    }
 
     debug.info("API", "Active organization set successfully");
     // Store org info directly — useSession() cache may be stale
@@ -92,32 +96,9 @@ export async function ensureActiveOrg(): Promise<boolean> {
 }
 
 /**
- * Read the better-auth session cookie from SecureStore and build a cookie header.
- * Mirrors what expoClient's fetchPlugin init() does internally in @better-auth/expo.
- */
-const COOKIE_KEY = "mobileversion_cookie";
-
-async function getSessionCookieHeader(): Promise<string> {
-  try {
-    const raw = await SecureStore.getItemAsync(COOKIE_KEY);
-    if (!raw || raw === "{}") return "";
-    const parsed = JSON.parse(raw);
-    const parts: string[] = [];
-    for (const [key, val] of Object.entries(parsed)) {
-      if (key.includes("session_token") || key.includes("session_data")) {
-        parts.push(`${key}=${(val as any).value}`);
-      }
-    }
-    return parts.join("; ");
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Thin wrapper around native fetch for API calls.
- * Manually injects the better-auth session cookie from SecureStore.
- * This is necessary because raw fetch() bypasses better-auth's fetch plugin chain.
+ * Thin wrapper around authClient.$fetch for API calls.
+ * $fetch goes through better-auth's fetch plugin chain (expoClient)
+ * which automatically attaches the session cookie from SecureStore.
  */
 async function apiFetch<T = unknown>(
   path: string,
@@ -127,58 +108,13 @@ async function apiFetch<T = unknown>(
   const method = options.method ?? "GET";
   const hasBody = options.body != null;
 
-  const cookie = await getSessionCookieHeader();
-
-  const headers: Record<string, string> = {
-    "Origin": BASE_URL,
-    ...(hasBody && { "Content-Type": "application/json" }),
-    ...(cookie ? { cookie } : {}),
-    ...(options.headers as Record<string, string> | undefined),
-  };
-
-  // Log current user for debugging session issues
+  // Log current user for debugging
   const sessionData = await authClient.getSession();
   const currentUserId = (sessionData.data?.user as any)?.id ?? "unknown";
   const currentUserName = (sessionData.data?.user as any)?.name ?? "unknown";
-  debug.log("API", `${method} ${url}`, { hasBody, hasCookie: !!cookie, currentUser: `${currentUserName} (${currentUserId})` });
+  debug.log("API", `${method} ${url}`, { hasBody, currentUser: `${currentUserName} (${currentUserId})` });
 
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    debug.log("API", `Response ${res.status} ${method} ${path}`);
-
-    if (!res.ok) {
-      let errMsg = `HTTP ${res.status}`;
-      let rawBody = "";
-      try {
-        rawBody = await res.text();
-        const parsed = JSON.parse(rawBody);
-        errMsg = parsed?.error ?? parsed?.message ?? JSON.stringify(parsed);
-      } catch {
-        errMsg = rawBody || errMsg;
-      }
-      debug.error("API", `${method} ${path} FAILED`, {
-        status: res.status,
-        rawBody: rawBody.substring(0, 500),
-        errMsg,
-      });
-      throw new Error(errMsg);
-    }
-    if (res.status === 204) return undefined as T;
-    return res.json();
-  } catch (e: any) {
-    if (e instanceof TypeError || e?.name === "TypeError" || e?.message?.includes("fetch")) {
-      debug.error("API", `${method} ${path} NETWORK ERROR`, {
-        error: e?.message ?? String(e),
-        url,
-      });
-      throw new Error(`Network: ${e?.message ?? "Failed to fetch"}`);
-    }
-    throw e;
-  }
+  return authFetch<T>(url, options);
 }
 
 // ─── Tickets ─────────────────────────────────────────────────
