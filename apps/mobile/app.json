@@ -22,11 +22,17 @@
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "static"
+            "useFrameworks": "static",
+            "usePrecompiledModules": false
           }
         }
       ]
     ],
+    "autolinking": {
+      "ios": {
+        "buildFromSource": ["react-native-reanimated", "react-native-worklets"]
+      }
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mobileversion.app",
