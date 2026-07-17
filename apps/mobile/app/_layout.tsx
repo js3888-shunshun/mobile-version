@@ -4,9 +4,35 @@ import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { registerForPushNotifications } from "../lib/push";
 import { debug } from "../lib/debug";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import "./globals.css";
 
+// ── Global error handlers (catch errors outside React tree) ──
+if (typeof globalThis !== "undefined") {
+  const prevError = (globalThis as any).ErrorUtils?.getGlobalHandler?.();
+  if (prevError) {
+    (globalThis as any).ErrorUtils?.setGlobalHandler?.((error: Error, isFatal?: boolean) => {
+      console.error("[GlobalHandler] Uncaught error (fatal=" + isFatal + "):", error?.message ?? String(error));
+      console.error("[GlobalHandler] Stack:", error?.stack ?? "no stack");
+      if (prevError) prevError(error, isFatal);
+    });
+  }
+}
+
+// Catch unhandled promise rejections
+if (typeof globalThis !== "undefined" && typeof (globalThis as any).HermesInternal !== "undefined") {
+  // Hermes: use ErrorUtils
+} else {
+  // JSC / others
+  require("react-native").NativeModules?.ExceptionsManager?.updateExceptionHandler?.(
+    (errorStr: string) => {
+      console.error("[ExceptionManager]", errorStr);
+    }
+  );
+}
+
 debug.info("App", "RootLayout initializing…");
+debug.info("App", `Platform: ${Platform.OS} v${Platform.Version}, __DEV__=${typeof __DEV__ !== "undefined" ? __DEV__ : "undefined"}`);
 
 const queryClient = new QueryClient();
 
@@ -18,43 +44,50 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (Platform.OS === "web") return;
 
-    const Notifications = require("expo-notifications");
+    try {
+      const Notifications = require("expo-notifications");
 
-    debug.info("NotificationProvider", "Setting up notification handlers…");
+      debug.info("NotificationProvider", "Setting up notification handlers…");
 
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
-
-    debug.info("NotificationProvider", "Registering for push notifications…");
-    registerForPushNotifications();
-
-    notificationListener.current =
-      Notifications.addNotificationReceivedListener((notification: any) => {
-        const data = notification.request.content.data;
-        if (data?.type === "ticket_update") {
-          qc.invalidateQueries({ queryKey: ["tickets"] });
-        }
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
       });
 
-    responseListener.current =
-      Notifications.addNotificationResponseReceivedListener((response: any) => {
-        const data = response.notification.request.content.data;
-        if (data?.ticketId) {
-          router.push(`/ticket/${data.ticketId}`);
-        }
-      });
+      debug.info("NotificationProvider", "Registering for push notifications…");
+      registerForPushNotifications();
 
-    return () => {
-      if (notificationListener.current)
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      if (responseListener.current)
-        Notifications.removeNotificationSubscription(responseListener.current);
-    };
+      notificationListener.current =
+        Notifications.addNotificationReceivedListener((notification: any) => {
+          const data = notification.request.content.data;
+          if (data?.type === "ticket_update") {
+            qc.invalidateQueries({ queryKey: ["tickets"] });
+          }
+        });
+
+      responseListener.current =
+        Notifications.addNotificationResponseReceivedListener((response: any) => {
+          const data = response.notification.request.content.data;
+          if (data?.ticketId) {
+            router.push(`/ticket/${data.ticketId}`);
+          }
+        });
+
+      return () => {
+        if (notificationListener.current)
+          Notifications.removeNotificationSubscription(notificationListener.current);
+        if (responseListener.current)
+          Notifications.removeNotificationSubscription(responseListener.current);
+      };
+    } catch (err: any) {
+      debug.error("NotificationProvider", "Failed to setup notifications", {
+        error: err?.message ?? String(err),
+        stack: err?.stack ?? "no stack",
+      });
+    }
   }, [qc]);
 
   return <>{children}</>;
@@ -62,9 +95,10 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <NotificationProvider>
-        <Stack screenOptions={{ headerShown: false }}>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <NotificationProvider>
+          <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(tabs)" />
@@ -81,6 +115,7 @@ export default function RootLayout() {
           />
         </Stack>
       </NotificationProvider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

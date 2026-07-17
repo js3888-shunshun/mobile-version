@@ -21,19 +21,36 @@ if (Platform.OS === "web") {
 } else {
   // Native: use expo plugin with SecureStore
   debug.info("AuthClient", "Using native (SecureStore) auth");
-  const { expoClient } = require("@better-auth/expo/client");
-  const SecureStore = require("expo-secure-store");
+  try {
+    const { expoClient } = require("@better-auth/expo/client");
+    const SecureStore = require("expo-secure-store");
 
-  authClient = createAuthClient({
-    baseURL: BASE_URL,
-    plugins: [
-      expoClient({
-        scheme: "mobileversion",
-        storagePrefix: "mobileversion",
-        storage: SecureStore,
-      }),
-    ],
-  });
+    debug.info("AuthClient", "Native modules loaded: expoClient=" + typeof expoClient + ", SecureStore=" + typeof SecureStore);
+
+    authClient = createAuthClient({
+      baseURL: BASE_URL,
+      plugins: [
+        expoClient({
+          scheme: "mobileversion",
+          storagePrefix: "mobileversion",
+          storage: SecureStore,
+        }),
+      ],
+    });
+    debug.info("AuthClient", "Native auth client created successfully");
+  } catch (err: any) {
+    debug.error("AuthClient", "FATAL: Failed to load native auth modules", {
+      error: err?.message ?? String(err),
+      stack: err?.stack ?? "no stack",
+    });
+    // Fallback: create a minimal auth client (no plugins) so the app
+    // doesn't crash on startup. Auth will be broken but at least the
+    // error screen will render.
+    authClient = createAuthClient({
+      baseURL: BASE_URL,
+    });
+    debug.warn("AuthClient", "Fallback auth client created (auth WILL be broken!)");
+  }
 }
 
 debug.info("AuthClient", "Auth client created successfully");
