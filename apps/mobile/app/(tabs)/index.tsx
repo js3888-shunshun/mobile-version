@@ -44,13 +44,12 @@ export default function TicketList() {
       {/* Header */}
       <View className="flex-row justify-between items-center px-4 py-3 bg-white border-b border-gray-200">
         <Text className="text-lg font-bold">Tickets</Text>
-        <Button
-          size="icon"
-          className="w-11 h-11 rounded-full"
+        <TouchableOpacity
           onPress={() => router.push("/ticket/new")}
+          className="px-2 py-1"
         >
-          <Text className="text-white text-2xl font-bold leading-none">+</Text>
-        </Button>
+          <Text className="text-black text-2xl font-bold">+</Text>
+        </TouchableOpacity>
       </View>
 
       {isLoading ? (
