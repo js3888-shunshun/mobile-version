@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, TouchableOpacity, Alert } from "react-native";
+import { View, Text, Pressable, TouchableOpacity, Alert, Keyboard } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authClient } from "../../lib/auth-client";
@@ -62,9 +62,10 @@ export default function SignUp() {
   };
 
   return (
-    <View
+    <Pressable
       className="flex-1 justify-center bg-white px-6"
       style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+      onPress={Keyboard.dismiss}
     >
       <Text className="text-3xl font-bold text-center mb-2">Create Account</Text>
       <Text className="text-gray-500 text-center mb-8">Join your organization</Text>
@@ -111,6 +112,6 @@ export default function SignUp() {
           <Text className="text-black font-semibold">Sign In</Text>
         </Text>
       </TouchableOpacity>
-    </View>
+    </Pressable>
   );
 }
