@@ -112,7 +112,11 @@ async function apiFetch<T = unknown>(
     ...(options.headers as Record<string, string> | undefined),
   };
 
-  debug.log("API", `${method} ${url}`, { hasBody, headers });
+  // Log current user for debugging session issues
+  const sessionData = await authClient.getSession();
+  const currentUserId = (sessionData.data?.user as any)?.id ?? "unknown";
+  const currentUserName = (sessionData.data?.user as any)?.name ?? "unknown";
+  debug.log("API", `${method} ${url}`, { hasBody, currentUser: `${currentUserName} (${currentUserId})` });
 
   try {
     const res = await fetch(url, {

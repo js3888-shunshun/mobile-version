@@ -75,7 +75,7 @@ export async function sendTicketNotification(
   const truncated = description.length > 80 ? description.slice(0, 77) + "…" : description;
   const who = actorName ?? "Someone";
   const title =
-    action === "created" ? `📝 New ticket by ${who}` : `✏️ Ticket updated by ${who}`;
+    action === "created" ? `New ticket by ${who}` : `Ticket updated by ${who}`;
   const body = `"${truncated}"`;
   console.log(`[push] message: title="${title}", body="${body}"`);
 
