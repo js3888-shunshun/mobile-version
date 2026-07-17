@@ -38,57 +38,77 @@ const queryClient = new QueryClient();
 
 function NotificationProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
-  const notificationListener = useRef<any>();
-  const responseListener = useRef<any>();
+  const notificationListener = useRef<any>(null);
+  const responseListener = useRef<any>(null);
+  const { data: session } = require("../lib/auth-client").authClient.useSession();
+  const lastUserId = useRef<string | null>(null);
 
   useEffect(() => {
     if (Platform.OS === "web") return;
 
+    let Notifications: any;
     try {
-      const Notifications = require("expo-notifications");
+      Notifications = require("expo-notifications");
+    } catch (err: any) {
+      debug.error("NotificationProvider", "expo-notifications not available", { error: err?.message ?? String(err) });
+      return;
+    }
 
-      debug.info("NotificationProvider", "Setting up notification handlers…");
+    // --- Set handler (safe to call multiple times) ---
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
 
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSetBadge: false,
-        }),
-      });
-
-      debug.info("NotificationProvider", "Registering for push notifications…");
-      registerForPushNotifications();
-
+    // --- Register listeners once ---
+    if (!notificationListener.current) {
       notificationListener.current =
         Notifications.addNotificationReceivedListener((notification: any) => {
+          debug.info("NotificationProvider", "Foreground notification received", notification.request.content.data);
           const data = notification.request.content.data;
           if (data?.type === "ticket_update") {
+            debug.info("NotificationProvider", "Invalidating tickets query");
             qc.invalidateQueries({ queryKey: ["tickets"] });
           }
         });
 
       responseListener.current =
         Notifications.addNotificationResponseReceivedListener((response: any) => {
+          debug.info("NotificationProvider", "Notification tapped", response.notification.request.content.data);
           const data = response.notification.request.content.data;
           if (data?.ticketId) {
             router.push(`/ticket/${data.ticketId}`);
           }
         });
 
-      return () => {
-        if (notificationListener.current)
-          Notifications.removeNotificationSubscription(notificationListener.current);
-        if (responseListener.current)
-          Notifications.removeNotificationSubscription(responseListener.current);
-      };
-    } catch (err: any) {
-      debug.error("NotificationProvider", "Failed to setup notifications", {
-        error: err?.message ?? String(err),
-        stack: err?.stack ?? "no stack",
-      });
+      debug.info("NotificationProvider", "Listeners registered");
     }
-  }, [qc]);
+
+    // --- Re-register push token when user changes ---
+    const currentUserId = session?.user?.id ?? null;
+    if (currentUserId !== lastUserId.current) {
+      debug.info("NotificationProvider", `User changed: ${lastUserId.current ?? "none"} → ${currentUserId ?? "none"} — re-registering push token`);
+      lastUserId.current = currentUserId;
+      registerForPushNotifications();
+    }
+
+    // --- Cleanup on unmount ---
+    return () => {
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current = null;
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current = null;
+      }
+      debug.info("NotificationProvider", "Listeners removed");
+    };
+  }, [session?.user?.id, qc]);
 
   return <>{children}</>;
 }
