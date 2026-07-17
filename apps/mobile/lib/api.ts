@@ -27,12 +27,8 @@ export async function ensureActiveOrg(): Promise<boolean> {
 
   // List user's organizations
   try {
-    // Use native fetch for org endpoints (authClient.$fetch may behave differently on web)
-    // NOTE: React Native fetch() does NOT automatically include an Origin header.
-    // The server requires Origin for CORS-protected endpoints like set-active.
-    const orgsRes = await fetch(`${BASE_URL}/api/auth/organization/list`, {
+    const orgsRes = await authClient.$fetch(`${BASE_URL}/api/auth/organization/list`, {
       method: "GET",
-      credentials: "include",
       headers: { "Content-Type": "application/json", "Origin": BASE_URL },
     });
 
@@ -63,9 +59,8 @@ export async function ensureActiveOrg(): Promise<boolean> {
     const orgId = orgs[0].id;
     debug.info("API", `Auto-selecting organization: ${orgs[0].name} (${orgId})`);
 
-    const setRes = await fetch(`${BASE_URL}/api/auth/organization/set-active`, {
+    const setRes = await authClient.$fetch(`${BASE_URL}/api/auth/organization/set-active`, {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json", "Origin": BASE_URL },
       body: JSON.stringify({ organizationId: orgId }),
     });
@@ -95,8 +90,9 @@ export async function ensureActiveOrg(): Promise<boolean> {
 }
 
 /**
- * Thin wrapper around native fetch for API calls.
- * Uses credentials: "include" so browser sends session cookies.
+ * Thin wrapper around authClient.$fetch for API calls.
+ * Uses better-auth's $fetch which automatically attaches the session cookie
+ * from SecureStore — critical for correct user identity on the server.
  */
 async function apiFetch<T = unknown>(
   path: string,
@@ -119,9 +115,8 @@ async function apiFetch<T = unknown>(
   debug.log("API", `${method} ${url}`, { hasBody, currentUser: `${currentUserName} (${currentUserId})` });
 
   try {
-    const res = await fetch(url, {
+    const res = await authClient.$fetch(url, {
       ...options,
-      credentials: "include",
       headers,
     });
 
