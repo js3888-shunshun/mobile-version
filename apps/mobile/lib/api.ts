@@ -27,10 +27,12 @@ export async function ensureActiveOrg(): Promise<boolean> {
   // List user's organizations
   try {
     // Use native fetch for org endpoints (authClient.$fetch may behave differently on web)
+    // NOTE: React Native fetch() does NOT automatically include an Origin header.
+    // The server requires Origin for CORS-protected endpoints like set-active.
     const orgsRes = await fetch(`${BASE_URL}/api/auth/organization/list`, {
       method: "GET",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Origin": BASE_URL },
     });
 
     if (!orgsRes.ok) {
@@ -63,7 +65,7 @@ export async function ensureActiveOrg(): Promise<boolean> {
     const setRes = await fetch(`${BASE_URL}/api/auth/organization/set-active`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Origin": BASE_URL },
       body: JSON.stringify({ organizationId: orgId }),
     });
 
@@ -102,6 +104,7 @@ async function apiFetch<T = unknown>(
   const hasBody = options.body != null;
 
   const headers: Record<string, string> = {
+    "Origin": BASE_URL,
     ...(hasBody && { "Content-Type": "application/json" }),
     ...(options.headers as Record<string, string> | undefined),
   };
