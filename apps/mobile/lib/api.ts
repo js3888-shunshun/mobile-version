@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "./auth-client";
 import { debug } from "./debug";
 import { useOrgStore } from "./org-store";
+import * as SecureStore from "expo-secure-store";
 import type { Ticket } from "@mobile/shared";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
@@ -27,9 +28,10 @@ export async function ensureActiveOrg(): Promise<boolean> {
 
   // List user's organizations
   try {
-    const orgsRes = await authClient.$fetch(`${BASE_URL}/api/auth/organization/list`, {
+    const cookie = await getSessionCookieHeader();
+    const orgsRes = await fetch(`${BASE_URL}/api/auth/organization/list`, {
       method: "GET",
-      headers: { "Content-Type": "application/json", "Origin": BASE_URL },
+      headers: { "Content-Type": "application/json", "Origin": BASE_URL, ...(cookie ? { cookie } : {}) },
     });
 
     if (!orgsRes.ok) {
@@ -59,9 +61,9 @@ export async function ensureActiveOrg(): Promise<boolean> {
     const orgId = orgs[0].id;
     debug.info("API", `Auto-selecting organization: ${orgs[0].name} (${orgId})`);
 
-    const setRes = await authClient.$fetch(`${BASE_URL}/api/auth/organization/set-active`, {
+    const setRes = await fetch(`${BASE_URL}/api/auth/organization/set-active`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Origin": BASE_URL },
+      headers: { "Content-Type": "application/json", "Origin": BASE_URL, ...(cookie ? { cookie } : {}) },
       body: JSON.stringify({ organizationId: orgId }),
     });
 
@@ -90,9 +92,32 @@ export async function ensureActiveOrg(): Promise<boolean> {
 }
 
 /**
- * Thin wrapper around authClient.$fetch for API calls.
- * Uses better-auth's $fetch which automatically attaches the session cookie
- * from SecureStore — critical for correct user identity on the server.
+ * Read the better-auth session cookie from SecureStore and build a cookie header.
+ * Mirrors what expoClient's fetchPlugin init() does internally in @better-auth/expo.
+ */
+const COOKIE_KEY = "mobileversion_cookie";
+
+async function getSessionCookieHeader(): Promise<string> {
+  try {
+    const raw = await SecureStore.getItemAsync(COOKIE_KEY);
+    if (!raw || raw === "{}") return "";
+    const parsed = JSON.parse(raw);
+    const parts: string[] = [];
+    for (const [key, val] of Object.entries(parsed)) {
+      if (key.includes("session_token") || key.includes("session_data")) {
+        parts.push(`${key}=${(val as any).value}`);
+      }
+    }
+    return parts.join("; ");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Thin wrapper around native fetch for API calls.
+ * Manually injects the better-auth session cookie from SecureStore.
+ * This is necessary because raw fetch() bypasses better-auth's fetch plugin chain.
  */
 async function apiFetch<T = unknown>(
   path: string,
@@ -102,9 +127,12 @@ async function apiFetch<T = unknown>(
   const method = options.method ?? "GET";
   const hasBody = options.body != null;
 
+  const cookie = await getSessionCookieHeader();
+
   const headers: Record<string, string> = {
     "Origin": BASE_URL,
     ...(hasBody && { "Content-Type": "application/json" }),
+    ...(cookie ? { cookie } : {}),
     ...(options.headers as Record<string, string> | undefined),
   };
 
@@ -112,10 +140,10 @@ async function apiFetch<T = unknown>(
   const sessionData = await authClient.getSession();
   const currentUserId = (sessionData.data?.user as any)?.id ?? "unknown";
   const currentUserName = (sessionData.data?.user as any)?.name ?? "unknown";
-  debug.log("API", `${method} ${url}`, { hasBody, currentUser: `${currentUserName} (${currentUserId})` });
+  debug.log("API", `${method} ${url}`, { hasBody, hasCookie: !!cookie, currentUser: `${currentUserName} (${currentUserId})` });
 
   try {
-    const res = await authClient.$fetch(url, {
+    const res = await fetch(url, {
       ...options,
       headers,
     });
