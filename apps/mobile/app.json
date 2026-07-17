@@ -17,7 +17,15 @@
           "defaultChannel": "default"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
