@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "./auth-client";
 import { debug } from "./debug";
+import { useOrgStore } from "./org-store";
 import type { Ticket } from "@mobile/shared";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
@@ -82,8 +83,8 @@ export async function ensureActiveOrg(): Promise<boolean> {
     }
 
     debug.info("API", "Active organization set successfully");
-    // Refresh cached session so useSession() picks up activeOrganizationId
-    await authClient.getSession();
+    // Store org info directly — useSession() cache may be stale
+    useOrgStore.getState().setActiveOrg({ id: orgId, name: orgs[0].name });
     return true;
   } catch (err: any) {
     debug.error("API", "ensureActiveOrg exception", {
@@ -215,18 +216,23 @@ export function useDeleteTicket() {
 
 export function useOrgName() {
   const { data: session } = authClient.useSession();
+  const storedOrg = useOrgStore((s) => s.activeOrg);
 
   return useQuery({
-    queryKey: ["org-name", (session?.session as any)?.activeOrganizationId],
+    queryKey: ["org-name", (session?.session as any)?.activeOrganizationId ?? storedOrg?.id],
     queryFn: async () => {
       const activeOrgId = (session?.session as any)?.activeOrganizationId as string | undefined;
-      if (!activeOrgId) return null;
-
-      const orgs = await apiFetch<Array<{ id: string; name: string; slug: string }>>(
-        "/api/auth/organization/list",
-      );
-      const org = orgs.find((o) => o.id === activeOrgId);
-      return org?.name ?? null;
+      // If session has the active org id, fetch its name
+      if (activeOrgId) {
+        const orgs = await apiFetch<Array<{ id: string; name: string; slug: string }>>(
+          "/api/auth/organization/list",
+        );
+        const org = orgs.find((o) => o.id === activeOrgId);
+        if (org) return org.name;
+      }
+      // Fallback: use org info stored by ensureActiveOrg()
+      if (storedOrg) return storedOrg.name;
+      return null;
     },
     enabled: !!session,
     staleTime: 0,
