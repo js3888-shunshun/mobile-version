@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, Alert, ActivityIndicator, TouchableOpacity } from "react-native";
+import { View, Text, Alert, ActivityIndicator, TouchableOpacity, Pressable, Keyboard } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTicket, useUpdateTicket, useDeleteTicket } from "../../lib/api";
@@ -119,9 +119,9 @@ export default function TicketDetail() {
   ];
 
   return (
-    <View className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom }}>
+    <Pressable className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom, paddingTop: insets.top }} onPress={Keyboard.dismiss}>
       {/* Back button */}
-      <View className="flex-row items-center px-2 py-2 bg-white border-b border-gray-200">
+      <View className="flex-row items-center px-2 py-3 bg-white border-b border-gray-200">
         <TouchableOpacity
           onPress={() => {
             if (router.canGoBack()) {
@@ -230,6 +230,6 @@ export default function TicketDetail() {
           </View>
         </Card>
       )}
-    </View>
+    </Pressable>
   );
 }

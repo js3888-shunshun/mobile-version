@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Alert, Text, TouchableOpacity } from "react-native";
+import { View, Alert, Text, TouchableOpacity, Pressable, Keyboard } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCreateTicket } from "../../lib/api";
@@ -45,9 +45,9 @@ export default function NewTicket() {
   ];
 
   return (
-    <View className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom }}>
+    <Pressable className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom, paddingTop: insets.top }} onPress={Keyboard.dismiss}>
       {/* Back button */}
-      <View className="flex-row items-center px-2 py-2 bg-white border-b border-gray-200">
+      <View className="flex-row items-center px-2 py-3 bg-white border-b border-gray-200">
         <TouchableOpacity
           onPress={() => {
             if (router.canGoBack()) {
@@ -94,6 +94,6 @@ export default function NewTicket() {
           {createTicket.isPending ? "Creating..." : "Create Ticket"}
         </Button>
       </Card>
-    </View>
+    </Pressable>
   );
 }

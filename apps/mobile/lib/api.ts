@@ -82,6 +82,8 @@ export async function ensureActiveOrg(): Promise<boolean> {
     }
 
     debug.info("API", "Active organization set successfully");
+    // Refresh cached session so useSession() picks up activeOrganizationId
+    await authClient.getSession();
     return true;
   } catch (err: any) {
     debug.error("API", "ensureActiveOrg exception", {
@@ -227,5 +229,6 @@ export function useOrgName() {
       return org?.name ?? null;
     },
     enabled: !!session,
+    staleTime: 0,
   });
 }
