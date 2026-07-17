@@ -6,7 +6,10 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_NO_PRECOMPILE": "1"
+      }
     },
     "preview": {
       "distribution": "internal"
