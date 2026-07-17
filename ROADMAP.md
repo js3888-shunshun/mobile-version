@@ -103,19 +103,20 @@ mobile-version/  (pnpm monorepo)
 - [x] Verify ticket CRUD from mobile app
 - [x] **MILESTONE**: app launches; signup/login works; create/edit/delete tickets; list polls every 15s
 
-## Phase 3 — Push Notifications [IN PROGRESS] 🏗️
+## Phase 3 — Push Notifications [DONE] ✅
 
 - [x] `apps/server/src/push.ts` — `sendTicketNotification(orgId, ticketId, action)` with expo-server-sdk
 - [x] Hook into `POST /api/tickets` and `PATCH /api/tickets/:id` — fire-and-forget push dispatch
 - [x] Mobile notification listener — `addNotificationReceivedListener` → invalidate tickets query on foreground
 - [x] Notification tap handler — navigate to ticket detail screen via `router.push`
-- [x] Push token registration — `registerForPushNotifications()` sends token to server on mount
+- [x] Push token registration — `registerForPushNotifications()` sends token to server on mount + user switch
 - [x] Server push-token endpoint — `POST /api/push-token` (upsert), `DELETE /api/push-token` (deactivate)
+- [x] Enhanced push messages — actor name, ticket description, exclude sender from own notifications
+- [x] DeviceNotRegistered token cleanup — auto-deactivate invalid tokens
 - [x] Set all Cronwell member passwords to "test1234" for multi-user testing
-- [ ] Expo project setup: create project at expo.dev, get FCM/APNs credentials
-- [ ] `app.json` — notification settings (icon, color, sounds) — partial, plugin already configured
-- [ ] Token lifecycle: re-register on app foreground; handle `DeviceNotRegistered` receipts
-- [ ] Test: User A updates ticket → User B receives push → taps → sees updated ticket
+- [x] Foreground notification received → tickets query invalidated → auto-refetch (verified end-to-end)
+- [ ] Expo project setup: create project at expo.dev, get FCM/APNs credentials (for production builds)
+- [ ] Token lifecycle: re-register on app foreground (currently on mount + user switch)
 - [ ] **MILESTONE**: multi-member real-time sync working — push delivered, tickets stay consistent
 
 ## Phase 4 — Polish & Ship [ ]

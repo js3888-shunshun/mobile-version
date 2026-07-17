@@ -22,13 +22,16 @@ export async function sendTicketNotification(
     .where(eq(tickets.id, ticketId));
   console.log(`[push] ticket fetch: ${ticket ? "found" : "NOT FOUND"}, description=${ticket?.description?.slice(0, 30) ?? "n/a"}`);
 
-  // 2. Find all members of this org
-  // TODO: exclude actorId in production (ne(member.userId, actorId))
+  // 2. Find all members of this org (excluding the actor)
   const members = await db
     .select()
     .from(member)
-    .where(eq(member.organizationId, orgId));
-  console.log(`[push] org members (all, including actor): ${members.length}`);
+    .where(
+      actorId
+        ? and(eq(member.organizationId, orgId), ne(member.userId, actorId))
+        : eq(member.organizationId, orgId),
+    );
+  console.log(`[push] org members (excluding actor): ${members.length}`);
 
   if (!members.length) {
     console.log("[push] No other members to notify — exiting");
