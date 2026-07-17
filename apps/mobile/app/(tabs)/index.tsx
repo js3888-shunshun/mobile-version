@@ -46,10 +46,10 @@ export default function TicketList() {
         <Text className="text-lg font-bold">Tickets</Text>
         <Button
           size="icon"
-          className="w-8 h-8 rounded-full"
+          className="w-11 h-11 rounded-full"
           onPress={() => router.push("/ticket/new")}
         >
-          <Text className="text-white text-lg font-bold">+</Text>
+          <Text className="text-white text-2xl font-bold leading-none">+</Text>
         </Button>
       </View>
 
