@@ -32,8 +32,9 @@ async function hashPassword(password: string): Promise<string> {
 async function main() {
   const pool = new Pool({ connectionString: DATABASE_URL });
 
-  // Cronwell members (excluding Joy Sun / owner)
+  // Cronwell members (all 4)
   const members = [
+    { email: "js3888@cornell.edu", name: "Joy Sun" },
     { email: "rongjiu.cai@cronwell-ai.cn", name: "RongjiuCai" },
     { email: "tomz@cronwell.ai", name: "Tom Zheng" },
     { email: "test-mobile@cronalpha.com", name: "Mobile Test" },

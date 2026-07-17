@@ -20,7 +20,6 @@ async function authFetch<T = unknown>(
     ...options,
     method,
     headers: {
-      "Origin": BASE_URL,
       ...(options.body != null && { "Content-Type": "application/json" }),
       ...(options.headers as Record<string, string> | undefined),
     },
@@ -108,11 +107,31 @@ async function apiFetch<T = unknown>(
   const method = options.method ?? "GET";
   const hasBody = options.body != null;
 
-  // Log current user for debugging
-  const sessionData = await authClient.getSession();
-  const currentUserId = (sessionData.data?.user as any)?.id ?? "unknown";
-  const currentUserName = (sessionData.data?.user as any)?.name ?? "unknown";
-  debug.log("API", `${method} ${url}`, { hasBody, currentUser: `${currentUserName} (${currentUserId})` });
+  // Log current user for debugging — use both getSession() and /api/me
+  // to detect cookie/session mismatch issues
+  try {
+    const sessionData = await authClient.getSession();
+    const cachedUserId = (sessionData.data?.user as any)?.id ?? "unknown";
+    const cachedUserName = (sessionData.data?.user as any)?.name ?? "unknown";
+
+    // Verify against /api/me to cross-check server-side identity
+    const meData = await authFetch<{ user?: { id?: string; name?: string } }>(
+      `${BASE_URL}/api/me`,
+      { method: "GET" },
+    );
+    const serverUserId = meData?.user?.id ?? "none";
+    const serverUserName = meData?.user?.name ?? "none";
+
+    if (cachedUserId !== serverUserId) {
+      debug.warn("API", `SESSION MISMATCH: cached=${cachedUserName} (${cachedUserId}) vs server=${serverUserName} (${serverUserId})`);
+      console.warn(`[API] SESSION MISMATCH: cached=${cachedUserName} (${cachedUserId}) vs server=${serverUserName} (${serverUserId})`);
+    }
+
+    debug.log("API", `${method} ${url}`, { hasBody, currentUser: `${serverUserName} (${serverUserId})` });
+  } catch {
+    // If /api/me fails, still log what we can
+    debug.log("API", `${method} ${url}`, { hasBody, currentUser: "unknown" });
+  }
 
   return authFetch<T>(url, options);
 }

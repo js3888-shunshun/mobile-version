@@ -1,7 +1,7 @@
 import { Stack, router } from "expo-router";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { useEffect, useRef, useCallback } from "react";
+import { Platform, AppState } from "react-native";
 import { registerForPushNotifications } from "../lib/push";
 import { debug } from "../lib/debug";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -39,35 +39,38 @@ const queryClient = new QueryClient();
 
 console.log("[PushSetup] NotificationProvider module loaded");
 
+/**
+ * Provides push notification handlers and token registration.
+ * Does NOT use authClient.useSession() to avoid Proxy/Hermes compatibility issues.
+ * Instead, registers on mount and re-registers when app returns to foreground.
+ */
 function NotificationProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const notificationListener = useRef<any>(null);
   const responseListener = useRef<any>(null);
-  const { data: session } = authClient.useSession();
-  const lastUserId = useRef<string | null>(null);
+  const hasSetup = useRef(false);
 
-  console.log("[PushSetup] NotificationProvider render, session=" + (session?.user?.id ?? "no-session"));
-
-  useEffect(() => {
-    console.log("[PushSetup] useEffect fired, platform=" + Platform.OS);
-
+  const setupNotifications = useCallback(() => {
     if (Platform.OS === "web") {
       console.log("[PushSetup] Skipping push on web");
-      return;
+      return () => {};
     }
 
     let Notifications: any;
     try {
-      console.log("[PushSetup] require(expo-notifications)...");
       Notifications = require("expo-notifications");
-      console.log("[PushSetup] expo-notifications loaded OK");
     } catch (err: any) {
       console.log("[PushSetup] expo-notifications FAIL: " + (err?.message ?? String(err)));
-      debug.error("NotificationProvider", "expo-notifications not available", { error: err?.message ?? String(err) });
-      return;
+      return () => {};
     }
 
-    // --- Set handler (safe to call multiple times) ---
+    // Verify module loaded correctly
+    if (!Notifications || typeof Notifications.setNotificationHandler !== "function") {
+      console.log("[PushSetup] expo-notifications module incomplete");
+      return () => {};
+    }
+
+    // Set notification handler (controls how notifications appear when app is foregrounded)
     console.log("[PushSetup] calling setNotificationHandler...");
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
@@ -79,12 +82,14 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
     });
     console.log("[PushSetup] setNotificationHandler done");
 
-    // --- Register listeners once ---
-    if (!notificationListener.current) {
+    // Register listeners once
+    if (!hasSetup.current) {
+      hasSetup.current = true;
       console.log("[PushSetup] registering listeners...");
+
       notificationListener.current =
         Notifications.addNotificationReceivedListener((notification: any) => {
-          console.log("[PushSetup] Foreground notification received:", notification.request.content.data);
+          console.log("[PushSetup] Foreground notification received:", JSON.stringify(notification.request.content.data));
           const data = notification.request.content.data;
           if (data?.type === "ticket_update") {
             console.log("[PushSetup] Invalidating tickets query");
@@ -94,7 +99,7 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
 
       responseListener.current =
         Notifications.addNotificationResponseReceivedListener((response: any) => {
-          console.log("[PushSetup] Notification tapped:", response.notification.request.content.data);
+          console.log("[PushSetup] Notification tapped:", JSON.stringify(response.notification.request.content.data));
           const data = response.notification.request.content.data;
           if (data?.ticketId) {
             router.push(`/ticket/${data.ticketId}`);
@@ -104,28 +109,48 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
       console.log("[PushSetup] Listeners registered");
     }
 
-    // --- Re-register push token when user changes ---
-    const currentUserId = session?.user?.id ?? null;
-    console.log("[PushSetup] session check: currentUserId=" + currentUserId + ", lastUserId=" + (lastUserId.current ?? "null"));
-    if (currentUserId !== lastUserId.current) {
-      console.log("[PushSetup] User changed, re-registering push token...");
-      lastUserId.current = currentUserId;
-      registerForPushNotifications();
-    }
+    // Register push token (don't block the effect)
+    console.log("[PushSetup] Registering push token...");
+    registerForPushNotifications();
 
-    // --- Cleanup on unmount ---
+    return () => {
+      // Cleanup not needed here — handled by the useEffect cleanup
+    };
+  }, [qc]);
+
+  useEffect(() => {
+    console.log("[PushSetup] useEffect fired, platform=" + Platform.OS);
+
+    const cleanup = setupNotifications();
+
+    // Re-register push token when app returns to foreground
+    const appStateSub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        console.log("[PushSetup] App became active, re-registering push token...");
+        registerForPushNotifications();
+      }
+    });
+
     return () => {
       console.log("[PushSetup] Cleanup — removing listeners");
+      cleanup?.();
+      appStateSub.remove();
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        try {
+          const Notifications = require("expo-notifications");
+          Notifications.removeNotificationSubscription(notificationListener.current);
+        } catch {}
         notificationListener.current = null;
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        try {
+          const Notifications = require("expo-notifications");
+          Notifications.removeNotificationSubscription(responseListener.current);
+        } catch {}
         responseListener.current = null;
       }
     };
-  }, [session?.user?.id, qc]);
+  }, [setupNotifications]);
 
   return <>{children}</>;
 }

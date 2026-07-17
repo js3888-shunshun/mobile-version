@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authClient } from "../../lib/auth-client";
 import { ensureActiveOrg } from "../../lib/api";
+import { registerForPushNotifications } from "../../lib/push";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Card } from "../../components/ui/card";
@@ -51,6 +52,8 @@ export default function SignUp() {
             "Account created! However, you are not a member of any organization. Please ask an admin to invite you.",
           );
         }
+        // Register push token for the newly signed-up user (fire-and-forget)
+        registerForPushNotifications();
         router.replace("/(tabs)");
       }
     } catch (e: any) {

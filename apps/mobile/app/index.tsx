@@ -3,6 +3,7 @@ import { router, Redirect } from "expo-router";
 import { useEffect, useState } from "react";
 import { authClient } from "../lib/auth-client";
 import { ensureActiveOrg } from "../lib/api";
+import { registerForPushNotifications } from "../lib/push";
 import { debug } from "../lib/debug";
 
 export default function Index() {
@@ -26,6 +27,8 @@ export default function Index() {
           // Auto-select an organization if none is active
           const ready = await ensureActiveOrg();
           setOrgReady(ready);
+          // Register push token on cold start with existing session
+          if (ready) registerForPushNotifications();
         }
       })
       .catch((err) => {
