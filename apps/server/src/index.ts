@@ -85,6 +85,7 @@ async function requireOrg(
   const s = await auth.api.getSession({
     headers: fromNodeHeaders(request.headers),
   });
+  console.log(`[auth] requireOrg: session=${s ? "found" : "MISSING"}, userId=${s?.user?.id ?? "n/a"}, userName=${s?.user?.name ?? "n/a"}`);
   if (!s) {
     reply.status(401).send({ error: "unauthorized" });
     return null;
