@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { registerForPushNotifications } from "../lib/push";
 import { debug } from "../lib/debug";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { authClient } from "../lib/auth-client";
 import "./globals.css";
 
 // ── Global error handlers (catch errors outside React tree) ──
@@ -36,25 +37,38 @@ debug.info("App", `Platform: ${Platform.OS} v${Platform.Version}, __DEV__=${type
 
 const queryClient = new QueryClient();
 
+console.log("[PushSetup] NotificationProvider module loaded");
+
 function NotificationProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const notificationListener = useRef<any>(null);
   const responseListener = useRef<any>(null);
-  const { data: session } = require("../lib/auth-client").authClient.useSession();
+  const { data: session } = authClient.useSession();
   const lastUserId = useRef<string | null>(null);
 
+  console.log("[PushSetup] NotificationProvider render, session=" + (session?.user?.id ?? "no-session"));
+
   useEffect(() => {
-    if (Platform.OS === "web") return;
+    console.log("[PushSetup] useEffect fired, platform=" + Platform.OS);
+
+    if (Platform.OS === "web") {
+      console.log("[PushSetup] Skipping push on web");
+      return;
+    }
 
     let Notifications: any;
     try {
+      console.log("[PushSetup] require(expo-notifications)...");
       Notifications = require("expo-notifications");
+      console.log("[PushSetup] expo-notifications loaded OK");
     } catch (err: any) {
+      console.log("[PushSetup] expo-notifications FAIL: " + (err?.message ?? String(err)));
       debug.error("NotificationProvider", "expo-notifications not available", { error: err?.message ?? String(err) });
       return;
     }
 
     // --- Set handler (safe to call multiple times) ---
+    console.log("[PushSetup] calling setNotificationHandler...");
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowBanner: true,
@@ -63,41 +77,45 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
         shouldSetBadge: false,
       }),
     });
+    console.log("[PushSetup] setNotificationHandler done");
 
     // --- Register listeners once ---
     if (!notificationListener.current) {
+      console.log("[PushSetup] registering listeners...");
       notificationListener.current =
         Notifications.addNotificationReceivedListener((notification: any) => {
-          debug.info("NotificationProvider", "Foreground notification received", notification.request.content.data);
+          console.log("[PushSetup] Foreground notification received:", notification.request.content.data);
           const data = notification.request.content.data;
           if (data?.type === "ticket_update") {
-            debug.info("NotificationProvider", "Invalidating tickets query");
+            console.log("[PushSetup] Invalidating tickets query");
             qc.invalidateQueries({ queryKey: ["tickets"] });
           }
         });
 
       responseListener.current =
         Notifications.addNotificationResponseReceivedListener((response: any) => {
-          debug.info("NotificationProvider", "Notification tapped", response.notification.request.content.data);
+          console.log("[PushSetup] Notification tapped:", response.notification.request.content.data);
           const data = response.notification.request.content.data;
           if (data?.ticketId) {
             router.push(`/ticket/${data.ticketId}`);
           }
         });
 
-      debug.info("NotificationProvider", "Listeners registered");
+      console.log("[PushSetup] Listeners registered");
     }
 
     // --- Re-register push token when user changes ---
     const currentUserId = session?.user?.id ?? null;
+    console.log("[PushSetup] session check: currentUserId=" + currentUserId + ", lastUserId=" + (lastUserId.current ?? "null"));
     if (currentUserId !== lastUserId.current) {
-      debug.info("NotificationProvider", `User changed: ${lastUserId.current ?? "none"} → ${currentUserId ?? "none"} — re-registering push token`);
+      console.log("[PushSetup] User changed, re-registering push token...");
       lastUserId.current = currentUserId;
       registerForPushNotifications();
     }
 
     // --- Cleanup on unmount ---
     return () => {
+      console.log("[PushSetup] Cleanup — removing listeners");
       if (notificationListener.current) {
         Notifications.removeNotificationSubscription(notificationListener.current);
         notificationListener.current = null;
@@ -106,7 +124,6 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
         Notifications.removeNotificationSubscription(responseListener.current);
         responseListener.current = null;
       }
-      debug.info("NotificationProvider", "Listeners removed");
     };
   }, [session?.user?.id, qc]);
 
