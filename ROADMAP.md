@@ -111,7 +111,7 @@ mobile-version/  (pnpm monorepo)
 - [x] Notification tap handler — navigate to ticket detail screen via `router.push`
 - [x] Push token registration — `registerForPushNotifications()` sends token to server on mount
 - [x] Server push-token endpoint — `POST /api/push-token` (upsert), `DELETE /api/push-token` (deactivate)
-- [ ] Set all Cronwell member passwords to "test1234" for multi-user testing
+- [x] Set all Cronwell member passwords to "test1234" for multi-user testing
 - [ ] Expo project setup: create project at expo.dev, get FCM/APNs credentials
 - [ ] `app.json` — notification settings (icon, color, sounds) — partial, plugin already configured
 - [ ] Token lifecycle: re-register on app foreground; handle `DeviceNotRegistered` receipts
