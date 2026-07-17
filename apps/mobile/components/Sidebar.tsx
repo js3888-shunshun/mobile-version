@@ -10,6 +10,7 @@ import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
 import { debug } from "../lib/debug";
 import { useOrgName } from "../lib/api";
+import { useOrgStore } from "../lib/org-store";
 
 interface SidebarProps {
   open: boolean;
@@ -20,9 +21,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const insets = useSafeAreaInsets();
   const { data: session } = authClient.useSession();
   const { data: orgName } = useOrgName();
+  const storedOrg = useOrgStore((s) => s.activeOrg);
 
   const user = session?.user;
-  const activeOrgId = (session?.session as any)?.activeOrganizationId as string | undefined;
+  const activeOrgId = (session?.session as any)?.activeOrganizationId as string | undefined || storedOrg?.id;
 
   const handleLogout = () => {
     onClose();

@@ -8,15 +8,17 @@ import { Avatar } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Separator } from "../../components/ui/separator";
 import { useOrgName } from "../../lib/api";
+import { useOrgStore } from "../../lib/org-store";
 import { debug } from "../../lib/debug";
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
   const { data: session } = authClient.useSession();
   const { data: orgName } = useOrgName();
+  const storedOrg = useOrgStore((s) => s.activeOrg);
 
   const user = session?.user;
-  const activeOrgId = (session?.session as any)?.activeOrganizationId as string | undefined;
+  const activeOrgId = (session?.session as any)?.activeOrganizationId as string | undefined || storedOrg?.id;
 
   const handleLogout = () => {
     const doLogout = async () => {
