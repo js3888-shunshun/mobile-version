@@ -48,7 +48,7 @@ export default function TicketList() {
           onPress={() => router.push("/ticket/new")}
           className="px-2 py-1"
         >
-          <Text className="text-black text-2xl font-bold">+</Text>
+          <Text className="text-black text-4xl font-light">+</Text>
         </TouchableOpacity>
       </View>
 
