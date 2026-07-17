@@ -4,7 +4,7 @@ A mobile POC for an organization-scoped ticket (todo) system with real-time sync
 and push notifications. Built as a standalone pnpm monorepo connected to the shared
 collab-table PostgreSQL instance.
 
-> **Last updated**: 2026-07-14
+> **Last updated**: 2026-07-17
 
 ## Infra
 
@@ -72,7 +72,7 @@ mobile-version/  (pnpm monorepo)
 - [x] `GET /api/members` — list org members with user names/emails
 - [x] **MILESTONE**: all endpoints tested via curl; CRUD works; tickets scoped to org
 
-## Phase 2 — Expo Mobile App [IN PROGRESS] 🏗️
+## Phase 2 — Expo Mobile App [DONE] ✅
 
 - [x] `npx create-expo-app` with blank TypeScript template
 - [x] Configure Metro for pnpm monorepo (watchFolders, symlinks, singleton pinning)
@@ -87,21 +87,36 @@ mobile-version/  (pnpm monorepo)
 - [x] `lib/auth-client.ts` — better-auth Expo client setup with SecureStore
 - [x] `lib/api.ts` — TanStack React Query hooks (useTickets, useCreateTicket, useUpdateTicket, useDeleteTicket) with 15s refetchInterval
 - [x] `lib/push.ts` — Expo push token registration (permissions + POST to server)
-- [ ] **TODO**: Test app on device/simulator (`npx expo start`)
-- [ ] **TODO**: Verify signup/login flow end-to-end
-- [ ] **TODO**: Verify ticket CRUD from mobile app
-- [ ] **MILESTONE**: app launches; signup/login works; create/edit/delete tickets; list polls every 15s
+- [x] `lib/org-store.ts` — zustand store for org state (avoids stale session cache issue)
+- [x] `lib/debug.ts` — structured debug logging with emoji levels
+- [x] `components/ErrorBoundary.tsx` — React error boundary for crash visibility
+- [x] `components/Sidebar.tsx` — slide-out drawer with user info, org badge, nav links, logout
+- [x] Test app on device via EAS dev client build (iOS)
+- [x] Fix RNWorklets.framework dyld crash (buildFromSource + usePrecompiledModules: false)
+- [x] Fix ATS dev server connectivity (NSAllowsArbitraryLoads for dev builds)
+- [x] Fix better-auth ESM import (static import instead of require())
+- [x] Fix 403 Missing Origin (add Origin header to all fetch calls)
+- [x] Fix org name stuck on "Loading…" (zustand store + staleTime: 0)
+- [x] Fix keyboard dismiss on auth and ticket pages
+- [x] Fix back button safe area on ticket pages
+- [x] Verify signup/login flow end-to-end
+- [x] Verify ticket CRUD from mobile app
+- [x] **MILESTONE**: app launches; signup/login works; create/edit/delete tickets; list polls every 15s
 
-## Phase 3 — Push Notifications [ ]
+## Phase 3 — Push Notifications [IN PROGRESS] 🏗️
 
-- [x] `apps/server/src/push.ts` — `sendTicketNotification(orgId, ticketId, action)` stub (expo-server-sdk dispatch logic written)
-- [ ] Hook into `POST /api/tickets` and `PATCH /api/tickets/:id` — call push dispatch after DB write
+- [x] `apps/server/src/push.ts` — `sendTicketNotification(orgId, ticketId, action)` with expo-server-sdk
+- [x] Hook into `POST /api/tickets` and `PATCH /api/tickets/:id` — fire-and-forget push dispatch
+- [x] Mobile notification listener — `addNotificationReceivedListener` → invalidate tickets query on foreground
+- [x] Notification tap handler — navigate to ticket detail screen via `router.push`
+- [x] Push token registration — `registerForPushNotifications()` sends token to server on mount
+- [x] Server push-token endpoint — `POST /api/push-token` (upsert), `DELETE /api/push-token` (deactivate)
+- [ ] Set all Cronwell member passwords to "test1234" for multi-user testing
 - [ ] Expo project setup: create project at expo.dev, get FCM/APNs credentials
-- [ ] `app.json` / `app.config.ts` — notification settings (icon, color, sounds)
-- [ ] Mobile notification listener — `addNotificationReceivedListener` → invalidate tickets query on foreground
-- [ ] Notification tap handler — navigate to ticket detail screen
+- [ ] `app.json` — notification settings (icon, color, sounds) — partial, plugin already configured
 - [ ] Token lifecycle: re-register on app foreground; handle `DeviceNotRegistered` receipts
-- [ ] **MILESTONE**: User A updates ticket → User B receives push → taps → sees updated ticket
+- [ ] Test: User A updates ticket → User B receives push → taps → sees updated ticket
+- [ ] **MILESTONE**: multi-member real-time sync working — push delivered, tickets stay consistent
 
 ## Phase 4 — Polish & Ship [ ]
 

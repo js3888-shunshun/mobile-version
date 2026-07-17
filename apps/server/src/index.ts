@@ -179,7 +179,7 @@ app.post("/api/tickets", async (request, reply) => {
     .returning();
 
   // Fire push notification (don't block response)
-  sendTicketNotification(ctx.orgId, ticket.id, "created").catch((err) =>
+  sendTicketNotification(ctx.orgId, ticket.id, "created", ctx.userId).catch((err) =>
     app.log.error(err, "push notification failed"),
   );
 
@@ -216,7 +216,7 @@ app.patch("/api/tickets/:id", async (request, reply) => {
     .returning();
 
   // Fire push notification (don't block response)
-  sendTicketNotification(ctx.orgId, id, "updated").catch((err) =>
+  sendTicketNotification(ctx.orgId, id, "updated", ctx.userId).catch((err) =>
     app.log.error(err, "push notification failed"),
   );
 
