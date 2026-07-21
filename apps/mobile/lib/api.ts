@@ -2,13 +2,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "./auth-client";
 import { debug } from "./debug";
 import { useOrgStore } from "./org-store";
-import type { Ticket } from "@mobile/shared";
+import type {
+  Ticket,
+  TicketKind,
+  TicketClosedKind,
+  CommitTicketPayload,
+  CloseTicketPayload,
+} from "@mobile/shared";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://172.105.135.182:4000";
 
 /**
  * better-auth's $fetch returns { data, error } (not a Response).
- * This wraps it to return data on success and throw on error.
  */
 async function authFetch<T = unknown>(
   url: string,
@@ -20,13 +25,18 @@ async function authFetch<T = unknown>(
     ...options,
     method,
     headers: {
+      Origin: "mobileversion://",
       ...(options.body != null && { "Content-Type": "application/json" }),
       ...(options.headers as Record<string, string> | undefined),
     },
   });
 
   if (result.error) {
-    const err = result.error as { status?: number; statusText?: string; message?: string };
+    const err = result.error as {
+      status?: number;
+      statusText?: string;
+      message?: string;
+    };
     debug.error("API", `${method} ${url} FAILED`, {
       status: err.status,
       message: err.message ?? err.statusText ?? "Unknown error",
@@ -34,19 +44,12 @@ async function authFetch<T = unknown>(
     throw new Error(err.message ?? `HTTP ${err.status ?? "error"}`);
   }
 
-  // result.data is the JSON body
   return (result as { data: T }).data;
 }
 
-/**
- * Ensure the user has an active organization set in their session.
- * If not, auto-select the first available organization.
- * Returns true if an active org is now set, false if user has no orgs.
- */
 export async function ensureActiveOrg(): Promise<boolean> {
   debug.info("API", "ensureActiveOrg: checking session…");
 
-  // Check current session
   const sessionRes = await authClient.getSession();
   const session = sessionRes.data?.session as Record<string, unknown> | undefined;
 
@@ -55,82 +58,55 @@ export async function ensureActiveOrg(): Promise<boolean> {
     return true;
   }
 
-  debug.info("API", "No active org, listing organizations…");
-
-  // List user's organizations
   try {
     const orgs = await authFetch<Array<{ id: string; name: string; slug: string }>>(
       `${BASE_URL}/api/auth/organization/list`,
       { method: "GET" },
     );
 
-    debug.info("API", `Found ${orgs.length} organizations`, {
-      orgs: orgs.map((o) => ({ id: o.id, name: o.name })),
-    });
-
     if (orgs.length === 0) {
       debug.warn("API", "User has no organizations");
       return false;
     }
 
-    // Auto-select the first organization
     const orgId = orgs[0].id;
-    debug.info("API", `Auto-selecting organization: ${orgs[0].name} (${orgId})`);
-
     await authFetch(`${BASE_URL}/api/auth/organization/set-active`, {
       method: "POST",
       body: JSON.stringify({ organizationId: orgId }),
     });
 
-    debug.info("API", "Active organization set successfully");
-    // Store org info directly — useSession() cache may be stale
     useOrgStore.getState().setActiveOrg({ id: orgId, name: orgs[0].name });
     return true;
   } catch (err: any) {
-    debug.error("API", "ensureActiveOrg exception", {
-      error: err?.message ?? String(err),
-    });
+    debug.error("API", "ensureActiveOrg exception", { error: err?.message ?? String(err) });
     return false;
   }
 }
 
-/**
- * Thin wrapper around authClient.$fetch for API calls.
- * $fetch goes through better-auth's fetch plugin chain (expoClient)
- * which automatically attaches the session cookie from SecureStore.
- */
 async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const method = options.method ?? "GET";
-  const hasBody = options.body != null;
 
-  // Log current user for debugging — use both getSession() and /api/me
-  // to detect cookie/session mismatch issues
   try {
     const sessionData = await authClient.getSession();
     const cachedUserId = (sessionData.data?.user as any)?.id ?? "unknown";
-    const cachedUserName = (sessionData.data?.user as any)?.name ?? "unknown";
 
-    // Verify against /api/me to cross-check server-side identity
     const meData = await authFetch<{ user?: { id?: string; name?: string } }>(
       `${BASE_URL}/api/me`,
       { method: "GET" },
     );
     const serverUserId = meData?.user?.id ?? "none";
-    const serverUserName = meData?.user?.name ?? "none";
 
     if (cachedUserId !== serverUserId) {
-      debug.warn("API", `SESSION MISMATCH: cached=${cachedUserName} (${cachedUserId}) vs server=${serverUserName} (${serverUserId})`);
-      console.warn(`[API] SESSION MISMATCH: cached=${cachedUserName} (${cachedUserId}) vs server=${serverUserName} (${serverUserId})`);
+      debug.warn("API", `SESSION MISMATCH: cached=${cachedUserId} vs server=${serverUserId}`);
     }
 
-    debug.log("API", `${method} ${url}`, { hasBody, currentUser: `${serverUserName} (${serverUserId})` });
+    debug.log("API", `${method} ${path}`);
   } catch {
-    // If /api/me fails, still log what we can
-    debug.log("API", `${method} ${url}`, { hasBody, currentUser: "unknown" });
+    debug.log("API", `${method} ${path} (no session check)`);
   }
 
   return authFetch<T>(url, options);
@@ -143,54 +119,68 @@ export function useTickets() {
   return useQuery({
     queryKey: ["tickets"],
     queryFn: () => apiFetch<Ticket[]>("/api/tickets"),
-    refetchInterval: 15_000, // poll every 15s for real-time sync
+    refetchInterval: 15_000,
   });
 }
 
 export function useTicket(id: string) {
   return useQuery({
     queryKey: ["tickets", id],
-    queryFn: async () => {
-      // We don't have a single-ticket endpoint, filter from list
-      const tickets = await apiFetch<Ticket[]>("/api/tickets");
-      return tickets.find((t) => t.id === id) ?? null;
+    queryFn: () => apiFetch<Ticket & { kind?: TicketKind; emails?: any[]; evidence?: any[] }>(`/api/tickets/${id}`),
+  });
+}
+
+export function useTicketKinds() {
+  return useQuery({
+    queryKey: ["ticket-kinds"],
+    queryFn: () => apiFetch<TicketKind[]>("/api/ticket-kinds"),
+    staleTime: 5 * 60 * 1000, // kinds rarely change
+  });
+}
+
+export function useCommitTicket() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CommitTicketPayload & { ticketId: string }) =>
+      apiFetch<Ticket>(`/api/tickets/${data.ticketId}/commit`, {
+        method: "POST",
+        body: JSON.stringify({
+          steps: data.steps,
+          decisionPath: data.decisionPath,
+          skippedStepIds: data.skippedStepIds,
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tickets"] });
     },
   });
 }
 
-export function useCreateTicket() {
+export function useCloseTicket() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { description: string; status: string }) =>
-      apiFetch<Ticket>("/api/tickets", {
+    mutationFn: (data: CloseTicketPayload & { ticketId: string }) =>
+      apiFetch<Ticket>(`/api/tickets/${data.ticketId}/close`, {
         method: "POST",
-        body: JSON.stringify(data),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tickets"] }),
-  });
-}
-
-export function useUpdateTicket() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: { id: string; description?: string; status?: string }) =>
-      apiFetch<Ticket>(`/api/tickets/${data.id}`, {
-        method: "PATCH",
         body: JSON.stringify({
-          ...(data.description !== undefined && { description: data.description }),
-          ...(data.status !== undefined && { status: data.status }),
+          closedKind: data.closedKind,
+          closedReason: data.closedReason,
         }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tickets"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+    },
   });
 }
 
-export function useDeleteTicket() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<void>(`/api/tickets/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tickets"] }),
+export function useTicketEvidence(ticketId: string) {
+  return useQuery({
+    queryKey: ["tickets", ticketId, "evidence"],
+    queryFn: () =>
+      apiFetch<{ evidence: any[]; emails: any[] }>(
+        `/api/tickets/${ticketId}/evidence`,
+      ),
+    enabled: !!ticketId,
   });
 }
 
@@ -201,18 +191,21 @@ export function useOrgName() {
   const storedOrg = useOrgStore((s) => s.activeOrg);
 
   return useQuery({
-    queryKey: ["org-name", (session?.session as any)?.activeOrganizationId ?? storedOrg?.id],
+    queryKey: [
+      "org-name",
+      (session?.session as any)?.activeOrganizationId ?? storedOrg?.id,
+    ],
     queryFn: async () => {
-      const activeOrgId = (session?.session as any)?.activeOrganizationId as string | undefined;
-      // If session has the active org id, fetch its name
+      const activeOrgId = (session?.session as any)?.activeOrganizationId as
+        | string
+        | undefined;
       if (activeOrgId) {
-        const orgs = await apiFetch<Array<{ id: string; name: string; slug: string }>>(
-          "/api/auth/organization/list",
-        );
+        const orgs = await apiFetch<
+          Array<{ id: string; name: string; slug: string }>
+        >("/api/auth/organization/list");
         const org = orgs.find((o) => o.id === activeOrgId);
         if (org) return org.name;
       }
-      // Fallback: use org info stored by ensureActiveOrg()
       if (storedOrg) return storedOrg.name;
       return null;
     },

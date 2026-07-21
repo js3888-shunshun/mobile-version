@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import {
   View,
   Text,
@@ -7,7 +6,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTickets } from "../../lib/api";
 import { TicketCard } from "../../components/TicketCard";
@@ -23,7 +22,7 @@ export default function TicketList() {
 
   const renderItem = ({ item }: { item: Ticket }) => (
     <TouchableOpacity
-      onPress={() => router.push(`/ticket/${item.id}`)}
+      onPress={() => router.push(`/ticket/${item.ticketId}`)}
       className="mx-4 mb-2"
     >
       <TicketCard ticket={item} />
@@ -32,9 +31,11 @@ export default function TicketList() {
 
   const renderEmpty = () => (
     <View className="flex-1 items-center justify-center py-20">
-      <Text className="text-lg font-semibold text-gray-500 mb-1">No tickets yet</Text>
+      <Text className="text-lg font-semibold text-gray-500 mb-1">
+        No open tickets
+      </Text>
       <Text className="text-sm text-gray-400">
-        Tap + to create your first ticket
+        Tickets will appear here when the agent detects events
       </Text>
     </View>
   );
@@ -44,12 +45,6 @@ export default function TicketList() {
       {/* Header */}
       <View className="flex-row justify-between items-center px-4 py-3 bg-white border-b border-gray-200">
         <Text className="text-lg font-bold">Tickets</Text>
-        <TouchableOpacity
-          onPress={() => router.push("/ticket/new")}
-          className="px-2 py-1"
-        >
-          <Text className="text-black text-4xl font-light">+</Text>
-        </TouchableOpacity>
       </View>
 
       {isLoading ? (
@@ -66,7 +61,7 @@ export default function TicketList() {
       ) : (
         <FlatList
           data={tickets ?? []}
-          keyExtractor={(item: Ticket) => item.id}
+          keyExtractor={(item: Ticket) => item.ticketId}
           renderItem={renderItem}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={{ paddingVertical: 12 }}

@@ -103,20 +103,27 @@ mobile-version/  (pnpm monorepo)
 - [x] Verify ticket CRUD from mobile app
 - [x] **MILESTONE**: app launches; signup/login works; create/edit/delete tickets; list polls every 15s
 
-## Phase 3 — Push Notifications [DONE] ✅
+## Phase 3 — Push Notifications [IN PROGRESS] 🚧
 
 - [x] `apps/server/src/push.ts` — `sendTicketNotification(orgId, ticketId, action)` with expo-server-sdk
-- [x] Hook into `POST /api/tickets` and `PATCH /api/tickets/:id` — fire-and-forget push dispatch
+- [x] Hook into `POST /api/tickets` and `PATCH /api/tickets/:id` — fire-and-forget push dispatch (verified: server logs show push triggered)
 - [x] Mobile notification listener — `addNotificationReceivedListener` → invalidate tickets query on foreground
 - [x] Notification tap handler — navigate to ticket detail screen via `router.push`
-- [x] Push token registration — `registerForPushNotifications()` sends token to server on mount + user switch
+- [x] Push token registration — `registerForPushNotifications()` on mount, foreground, sign-in, sign-up, cold start
 - [x] Server push-token endpoint — `POST /api/push-token` (upsert), `DELETE /api/push-token` (deactivate)
 - [x] Enhanced push messages — actor name, ticket description, exclude sender from own notifications
 - [x] DeviceNotRegistered token cleanup — auto-deactivate invalid tokens
 - [x] Set all Cronwell member passwords to "test1234" for multi-user testing
 - [x] Foreground notification received → tickets query invalidated → auto-refetch (verified end-to-end)
+- [x] Fix `shouldShowAlert` deprecated → `shouldShowBanner` + `shouldShowList` (Expo SDK 57)
+- [x] Fix emoji removal from push titles ("太AI了")
+- [x] Fix `apiFetch` use `authClient.$fetch()` instead of raw `fetch()` (cookie passthrough)
+- [x] Fix `useSession()` Proxy crash on Hermes → removed dependency, simplified NotificationProvider
+- [x] Add session mismatch detection (compare `getSession()` vs `/api/me`)
+- [x] Add AppState listener — re-register push token when app returns to foreground
+- [ ] **BUG**: Server `requireOrg` always resolves to Joy Sun regardless of logged-in user (cookie mismatch)
+- [ ] **BUG**: `active push tokens found: 0` — other members haven't registered push tokens
 - [ ] Expo project setup: create project at expo.dev, get FCM/APNs credentials (for production builds)
-- [ ] Token lifecycle: re-register on app foreground (currently on mount + user switch)
 - [ ] **MILESTONE**: multi-member real-time sync working — push delivered, tickets stay consistent
 
 ## Phase 4 — Polish & Ship [ ]

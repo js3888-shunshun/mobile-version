@@ -1,92 +1,123 @@
-import { useState } from "react";
-import { View, Text, Alert, ActivityIndicator, TouchableOpacity, Pressable, Keyboard } from "react-native";
+import { useState, useMemo } from "react";
+import {
+  View,
+  Text,
+  Alert,
+  ActivityIndicator,
+  TouchableOpacity,
+  Pressable,
+  Keyboard,
+  ScrollView,
+} from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useTicket, useUpdateTicket, useDeleteTicket } from "../../lib/api";
+import { useTicket, useCommitTicket, useCloseTicket } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
-import { Textarea } from "../../components/ui/textarea";
-import { Label } from "../../components/ui/label";
 import { Card } from "../../components/ui/card";
+import { StepWalker, createInitialState, canCommit } from "../../components/ticket/StepWalker";
+import { EvidencePanel } from "../../components/ticket/EvidencePanel";
+import { CloseDialog } from "../../components/ticket/CloseDialog";
 import { debug } from "../../lib/debug";
+import type { TicketStep, TicketClosedKind } from "@mobile/shared";
 
 export default function TicketDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: ticket, isLoading } = useTicket(id!);
-  const updateTicket = useUpdateTicket();
-  const deleteTicket = useDeleteTicket();
-  const [editing, setEditing] = useState(false);
-  const [desc, setDesc] = useState("");
-  const [status, setStatus] = useState("");
+  const commitTicket = useCommitTicket();
+  const closeTicket = useCloseTicket();
+  const [closeOpen, setCloseOpen] = useState(false);
 
-  const startEdit = () => {
+  // Step walker state (all in-memory, per spec §2.3)
+  const [stepState, setStepState] = useState(() =>
+    createInitialState((ticket?.steps as TicketStep[]) ?? []),
+  );
+
+  // Reset state when ticket loads
+  const steps = (ticket?.steps as TicketStep[]) ?? [];
+  const commitEnabled = useMemo(
+    () => canCommit(steps, stepState),
+    [steps, stepState],
+  );
+
+  // Determine if fact ticket (cannot be dismissed)
+  const isFactTicket = (ticket as any)?.kind?.family === "write_fact";
+
+  const handleCommit = async () => {
     if (!ticket) return;
-    setDesc(ticket.description);
-    setStatus(ticket.status);
-    setEditing(true);
-  };
 
-  const handleSave = async () => {
-    if (!desc.trim()) return Alert.alert("Error", "Description required");
-    debug.info("TicketDetail", `Updating ticket ${id}`, { status });
+    const decisionPath = Object.entries(stepState.decisions).map(
+      ([stepId, chosenOption]) => ({ stepId, chosenOption }),
+    );
+    const skippedStepIds = Array.from(stepState.skipped);
+
+    // Assemble final step payloads
+    const finalSteps = steps.map((s) => {
+      const step: any = { ...s };
+      if (s.kind === "edit" && stepState.editDrafts[s.id]) {
+        step.targets = s.targets?.map((t: any, ti: number) => {
+          const diffs = stepState.editDrafts[s.id]
+            .filter((e) => e.targetIndex === ti)
+            .map((e) => ({
+              field: e.field,
+              from: t.diff.find((d: any) => d.field === e.field)?.from ?? null,
+              to: e.newValue,
+            }));
+          return { ...t, diff: diffs };
+        });
+      }
+      if (s.kind === "send" && stepState.sendDrafts[s.id]) {
+        const d = stepState.sendDrafts[s.id];
+        step.draft = {
+          to: d.to.split(",").map((x: string) => x.trim()),
+          cc: d.cc ? d.cc.split(",").map((x: string) => x.trim()) : undefined,
+          subject: d.subject,
+          body: d.body,
+          marker: (s.draft as any)?.marker,
+        };
+      }
+      return step;
+    });
+
+    debug.info("TicketDetail", `Committing ticket ${id}`);
     try {
-      await updateTicket.mutateAsync({ id: id!, description: desc.trim(), status });
-      debug.info("TicketDetail", `Ticket ${id} updated`);
-      setEditing(false);
-    } catch (e: any) {
-      debug.error("TicketDetail", `Update failed for ticket ${id}`, { error: e?.message });
-      Alert.alert("Error", e?.message ?? "Update failed");
-    }
-  };
-
-  const handleDelete = () => {
-    debug.info("TicketDetail", "handleDelete called, id=" + id);
-    // Use window.confirm on web, Alert.alert on native
-    if (typeof window !== "undefined" && window.confirm) {
-      if (!window.confirm("Delete this ticket? This cannot be undone.")) return;
-      deleteTicket.mutateAsync(id!).then(() => {
-        debug.info("TicketDetail", "Deleted, navigating back");
-        if (router.canGoBack()) router.back();
-        else router.replace("/(tabs)");
-      }).catch((e: any) => {
-        debug.error("TicketDetail", "Delete failed", { error: e?.message ?? String(e) });
-        Alert.alert("Error", e?.message ?? "Delete failed");
+      await commitTicket.mutateAsync({
+        ticketId: id!,
+        steps: finalSteps,
+        decisionPath,
+        skippedStepIds,
       });
-      return;
-    }
-    // Native: use Alert.alert
-    Alert.alert("Delete Ticket", "This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteTicket.mutateAsync(id!);
-            if (router.canGoBack()) router.back();
-            else router.replace("/(tabs)");
-          } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Delete failed");
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleApprove = async () => {
-    try {
-      await updateTicket.mutateAsync({ id: id!, status: "approved" });
+      debug.info("TicketDetail", `Ticket ${id} committed`);
+      Alert.alert("Accepted", "Ticket has been committed successfully.", [
+        { text: "OK", onPress: () => router.back() },
+      ]);
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Failed");
+      debug.error("TicketDetail", "Commit failed", { error: e?.message });
+      Alert.alert(
+        "Commit Failed",
+        e?.message ?? "The ticket may have been superseded or the data changed.",
+        [{ text: "Reload", onPress: () => router.replace(`/ticket/${id}`) }],
+      );
     }
   };
 
-  const handleReject = async () => {
+  const handleClose = async (kind: TicketClosedKind, reason: string) => {
+    if (!ticket) return;
+    debug.info("TicketDetail", `Closing ticket ${id} as ${kind}`);
     try {
-      await updateTicket.mutateAsync({ id: id!, status: "rejected" });
+      await closeTicket.mutateAsync({
+        ticketId: id!,
+        closedKind: kind,
+        closedReason: `${kind}:${reason}`,
+      });
+      setCloseOpen(false);
+      Alert.alert("Closed", "Ticket has been closed.", [
+        { text: "OK", onPress: () => router.back() },
+      ]);
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Failed");
+      debug.error("TicketDetail", "Close failed", { error: e?.message });
+      Alert.alert("Error", e?.message ?? "Failed to close ticket");
     }
   };
 
@@ -106,130 +137,185 @@ export default function TicketDetail() {
     );
   }
 
-  const badgeVariant: Record<string, "warning" | "success" | "destructive"> = {
-    pending: "warning",
-    approved: "success",
-    rejected: "destructive",
+  const statusVariant: Record<string, "warning" | "success" | "destructive" | "secondary"> = {
+    open: "warning",
+    accepted: "success",
+    closed: "secondary",
+    draft: "secondary",
   };
 
-  const statuses: Array<{ key: "pending" | "approved" | "rejected"; variant: "warning" | "success" | "destructive" }> = [
-    { key: "pending", variant: "warning" },
-    { key: "approved", variant: "success" },
-    { key: "rejected", variant: "destructive" },
-  ];
-
   return (
-    <Pressable className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom, paddingTop: insets.top }} onPress={Keyboard.dismiss}>
-      {/* Back button */}
+    <Pressable
+      className="flex-1 bg-gray-50"
+      style={{ paddingBottom: insets.bottom, paddingTop: insets.top }}
+      onPress={Keyboard.dismiss}
+    >
+      {/* Header */}
       <View className="flex-row items-center px-2 py-3 bg-white border-b border-gray-200">
         <TouchableOpacity
           onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace("/(tabs)");
-            }
+            if (router.canGoBack()) router.back();
+            else router.replace("/(tabs)");
           }}
           className="px-3 py-2"
         >
           <Text className="text-base text-blue-600 font-semibold">← Back</Text>
         </TouchableOpacity>
-        <Text className="text-lg font-bold ml-2">Ticket Detail</Text>
+        <Text className="text-lg font-bold ml-2 flex-1" numberOfLines={1}>
+          {ticket.title}
+        </Text>
+        <Badge variant={statusVariant[ticket.status] ?? "secondary"}>
+          {ticket.status}
+        </Badge>
       </View>
 
-      {editing ? (
-        <Card className="mx-4 mt-4 gap-4">
-          <Textarea
-            label="Description"
-            value={desc}
-            onChangeText={setDesc}
-          />
-
-          <View>
-            <Label>Status</Label>
-            <View className="flex-row gap-2">
-              {statuses.map(({ key, variant }) => (
-                <TouchableOpacity key={key} onPress={() => setStatus(key)}>
-                  <Badge
-                    variant={status === key ? variant : "outline"}
-                  >
-                    {key}
-                  </Badge>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <View className="flex-row gap-3">
-            <Button
-              className="flex-1"
-              onPress={handleSave}
-              disabled={updateTicket.isPending}
-            >
-              {updateTicket.isPending ? "Saving..." : "Save"}
-            </Button>
-            <Button
-              className="flex-1"
-              variant="outline"
-              onPress={() => setEditing(false)}
-            >
-              Cancel
-            </Button>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 100 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Info card */}
+        <Card className="mx-4 mt-4 gap-2">
+          <Text className="text-sm text-gray-600">{ticket.creationReason}</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {(ticket as any)?.kind ? (
+              <Badge variant="secondary">
+                {(ticket as any).kind.title ?? ticket.kindKey}
+              </Badge>
+            ) : null}
+            {ticket.poId ? (
+              <Badge variant="outline">PO {ticket.poId.slice(0, 8)}...</Badge>
+            ) : null}
+            {ticket.supplierCode ? (
+              <Badge variant="outline">{ticket.supplierCode}</Badge>
+            ) : null}
+            {ticket.expiresAt ? (
+              <Badge variant="destructive">
+                Expires {new Date(ticket.expiresAt).toLocaleDateString()}
+              </Badge>
+            ) : null}
           </View>
         </Card>
-      ) : (
-        <Card className="mx-4 mt-4 gap-3">
-          <View className="flex-row justify-between items-start">
-            <Text className="text-lg font-semibold flex-1 mr-3">
-              {ticket.description}
-            </Text>
-            <Badge variant={badgeVariant[ticket.status] ?? "secondary"}>
-              {ticket.status}
-            </Badge>
-          </View>
 
-          <Text className="text-xs text-gray-400">
-            Created {new Date(ticket.createdAt).toLocaleDateString()}
+        {/* Evidence */}
+        <View className="mx-4 mt-4">
+          <EvidencePanel emails={(ticket as any)?.emails ?? []} />
+        </View>
+
+        {/* Steps */}
+        {steps.length > 0 ? (
+          <View className="mx-4 mt-4">
+            <StepWalker
+              steps={steps}
+              state={stepState}
+              onDecisionChange={(stepId, key) =>
+                setStepState((s) => ({
+                  ...s,
+                  decisions: { ...s.decisions, [stepId]: key },
+                }))
+              }
+              onTodoToggle={(stepId, done) =>
+                setStepState((s) => {
+                  const next = new Set(s.todosDone);
+                  done ? next.add(stepId) : next.delete(stepId);
+                  return { ...s, todosDone: next };
+                })
+              }
+              onSkipToggle={(stepId, skip) =>
+                setStepState((s) => {
+                  const next = new Set(s.skipped);
+                  skip ? next.add(stepId) : next.delete(stepId);
+                  return { ...s, skipped: next };
+                })
+              }
+              onEditDraftChange={(stepId, ti, field, val) =>
+                setStepState((s) => {
+                  const edits = [...(s.editDrafts[stepId] ?? [])];
+                  const idx = edits.findIndex(
+                    (e) => e.targetIndex === ti && e.field === field,
+                  );
+                  if (idx >= 0) edits[idx] = { ...edits[idx], newValue: val };
+                  return {
+                    ...s,
+                    editDrafts: { ...s.editDrafts, [stepId]: edits },
+                  };
+                })
+              }
+              onSendDraftChange={(stepId, field, value) =>
+                setStepState((s) => ({
+                  ...s,
+                  sendDrafts: {
+                    ...s.sendDrafts,
+                    [stepId]: {
+                      ...s.sendDrafts[stepId],
+                      [field]: value,
+                    },
+                  },
+                }))
+              }
+            />
+          </View>
+        ) : (
+          <Card className="mx-4 mt-4">
+            <Text className="text-sm text-gray-500 italic">No steps defined</Text>
+          </Card>
+        )}
+      </ScrollView>
+
+      {/* Bottom bar — only for open tickets */}
+      {ticket.status === "open" ? (
+        <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 flex-row gap-3" style={{ paddingBottom: insets.bottom + 8 }}>
+          <Button
+            className="flex-1"
+            onPress={handleCommit}
+            disabled={!commitEnabled || commitTicket.isPending}
+          >
+            {commitTicket.isPending
+              ? "Committing..."
+              : commitEnabled
+                ? "Accept & Commit"
+                : "Complete All Steps"}
+          </Button>
+          <Button
+            className="flex-1"
+            variant="outline"
+            onPress={() => setCloseOpen(true)}
+            disabled={closeTicket.isPending}
+          >
+            Close
+          </Button>
+        </View>
+      ) : ticket.status === "accepted" ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 bg-green-50 border-t border-green-200 px-4 py-4"
+          style={{ paddingBottom: insets.bottom + 8 }}
+        >
+          <Text className="text-center text-green-700 font-semibold">
+            ✓ Accepted{" "}
+            {ticket.resolvedAt
+              ? `on ${new Date(ticket.resolvedAt).toLocaleDateString()}`
+              : ""}
           </Text>
+        </View>
+      ) : ticket.status === "closed" ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 bg-gray-50 border-t border-gray-200 px-4 py-4"
+          style={{ paddingBottom: insets.bottom + 8 }}
+        >
+          <Text className="text-center text-gray-500 font-semibold">
+            Closed: {(ticket as any).closedKind ?? "unknown"}
+          </Text>
+        </View>
+      ) : null}
 
-          <View className="flex-row gap-3 mt-2">
-            {ticket.status !== "approved" && (
-              <Button
-                className="flex-1"
-                variant="secondary"
-                onPress={handleApprove}
-                disabled={updateTicket.isPending}
-              >
-                Approve
-              </Button>
-            )}
-            {ticket.status !== "rejected" && (
-              <Button
-                className="flex-1"
-                variant="secondary"
-                onPress={handleReject}
-                disabled={updateTicket.isPending}
-              >
-                Reject
-              </Button>
-            )}
-            <Button
-              className="flex-1"
-              variant="outline"
-              onPress={startEdit}
-            >
-              Edit
-            </Button>
-            <Button
-              className="flex-1"
-              variant="destructive"
-              onPress={handleDelete}
-            >
-              Delete
-            </Button>
-          </View>
-        </Card>
-      )}
+      {/* Close dialog */}
+      <CloseDialog
+        open={closeOpen}
+        onOpenChange={setCloseOpen}
+        onConfirm={handleClose}
+        isPending={closeTicket.isPending}
+        isFactTicket={isFactTicket}
+      />
     </Pressable>
   );
 }

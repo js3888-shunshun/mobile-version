@@ -3,13 +3,26 @@ import cors from "@fastify/cors";
 import {
   db,
   tickets,
+  ticketKinds,
+  ticketEvidence,
+  ticketWritePos,
+  purchaseOrders,
+  poLines,
   pushTokens,
+  emailMessages,
   member,
   user,
+  organization,
+  notifications,
+  ingestionEvents,
+  auditLog,
+  outboundLog,
   eq,
   and,
   inArray,
   desc,
+  isNull,
+  sql,
 } from "@mobile/db";
 import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "./auth.js";
@@ -29,7 +42,7 @@ await app.register(cors, {
   credentials: true,
 });
 
-// ─── Health ────────────────────────────────────────────────────────────
+// ─── Health ────────────────────────────────────────────────────────────────
 
 app.get("/health", async () => ({
   status: "ok",
@@ -37,7 +50,7 @@ app.get("/health", async () => ({
   time: new Date().toISOString(),
 }));
 
-// ─── Better Auth handler ───────────────────────────────────────────────
+// ─── Better Auth handler ───────────────────────────────────────────────────
 
 app.route({
   method: ["GET", "POST"],
@@ -60,7 +73,7 @@ app.route({
   },
 });
 
-// ─── Auth middleware ────────────────────────────────────────────────────
+// ─── Auth middleware ────────────────────────────────────────────────────────
 
 type AuthCtx = { userId: string; orgId: string };
 
@@ -99,7 +112,7 @@ async function requireOrg(
   return { userId: s.user.id, orgId };
 }
 
-// ─── Me ────────────────────────────────────────────────────────────────
+// ─── Me ────────────────────────────────────────────────────────────────────
 
 app.get("/api/me", async (request, reply) => {
   const s = await auth.api.getSession({
@@ -109,7 +122,7 @@ app.get("/api/me", async (request, reply) => {
   return { user: s.user, session: s.session };
 });
 
-// ─── Members (read from shared org/member tables) ──────────────────────
+// ─── Members ────────────────────────────────────────────────────────────────
 
 app.get("/api/members", async (request, reply) => {
   const ctx = await requireOrg(request, reply);
@@ -144,106 +157,376 @@ app.get("/api/members", async (request, reply) => {
   return result;
 });
 
-// ─── Tickets CRUD ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// TICKET SYSTEM v2
+// ════════════════════════════════════════════════════════════════════════════
 
-// List tickets for the active organization
-app.get("/api/tickets", async (request, reply) => {
+// ─── Ticket Kinds ──────────────────────────────────────────────────────────
+
+app.get("/api/ticket-kinds", async (request, reply) => {
   const ctx = await requireOrg(request, reply);
   if (!ctx) return;
 
   return db
     .select()
+    .from(ticketKinds)
+    .where(
+      and(
+        eq(ticketKinds.orgId, ctx.orgId),
+        eq(ticketKinds.enabled, true),
+      ),
+    )
+    .orderBy(ticketKinds.title);
+});
+
+// ─── List tickets for org (open only) ──────────────────────────────────────
+
+app.get("/api/tickets", async (request, reply) => {
+  const ctx = await requireOrg(request, reply);
+  if (!ctx) return;
+
+  // Only return open tickets — draft is agent-internal, accepted/closed are timeline
+  return db
+    .select()
     .from(tickets)
-    .where(eq(tickets.orgId, ctx.orgId))
+    .where(
+      and(
+        eq(tickets.orgId, ctx.orgId),
+        eq(tickets.status, "open"),
+      ),
+    )
     .orderBy(desc(tickets.createdAt));
 });
 
-// Create a ticket
-app.post("/api/tickets", async (request, reply) => {
+// ─── Single ticket with relations ──────────────────────────────────────────
+
+app.get("/api/tickets/:id", async (request, reply) => {
   const ctx = await requireOrg(request, reply);
   if (!ctx) return;
 
-  const body = request.body as { description?: string; status?: string };
-  const description = (body?.description ?? "").trim();
-  if (!description) {
-    return reply.status(400).send({ error: "description required" });
-  }
+  const { id } = request.params as { id: string };
 
   const [ticket] = await db
-    .insert(tickets)
-    .values({
-      orgId: ctx.orgId,
-      description,
-      status: body?.status ?? "pending",
-      createdBy: ctx.userId,
-    })
-    .returning();
+    .select()
+    .from(tickets)
+    .where(and(eq(tickets.ticketId, id), eq(tickets.orgId, ctx.orgId)));
 
-  // Fire push notification (don't block response)
-  sendTicketNotification(ctx.orgId, ticket.id, "created", ctx.userId).catch((err) =>
-    app.log.error(err, "push notification failed"),
-  );
+  if (!ticket) return reply.status(404).send({ error: "ticket not found" });
 
-  return reply.status(201).send(ticket);
+  // Fetch kind metadata
+  const [kind] = await db
+    .select()
+    .from(ticketKinds)
+    .where(
+      and(
+        eq(ticketKinds.orgId, ctx.orgId),
+        eq(ticketKinds.key, ticket.kindKey),
+      ),
+    );
+
+  // Fetch evidence (emails)
+  const evidence = await db
+    .select()
+    .from(ticketEvidence)
+    .where(eq(ticketEvidence.ticketId, id));
+
+  // Fetch linked email messages
+  const emailIds = evidence
+    .map((e) => e.emailMessageId)
+    .filter((id): id is string => id !== null);
+
+  let emails: (typeof emailMessages.$inferSelect)[] = [];
+  if (emailIds.length > 0) {
+    emails = await db
+      .select()
+      .from(emailMessages)
+      .where(inArray(emailMessages.id, emailIds))
+      .orderBy(desc(emailMessages.receivedAt));
+  }
+
+  // Fetch PO if linked
+  let po: typeof purchaseOrders.$inferSelect | null = null;
+  let lines: (typeof poLines.$inferSelect)[] = [];
+  if (ticket.poId) {
+    const [poRow] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.orgId, ctx.orgId),
+          eq(purchaseOrders.poId, ticket.poId),
+        ),
+      );
+    po = poRow ?? null;
+
+    if (po) {
+      lines = await db
+        .select()
+        .from(poLines)
+        .where(eq(poLines.poId, ticket.poId!))
+        .orderBy(poLines.lineId);
+    }
+  }
+
+  return {
+    ...ticket,
+    kind,
+    evidence,
+    emails,
+    purchaseOrder: po,
+    poLines: lines,
+  };
 });
 
-// Update a ticket
-app.patch("/api/tickets/:id", async (request, reply) => {
+// ─── Commit (accept) ───────────────────────────────────────────────────────
+
+app.post("/api/tickets/:id/commit", async (request, reply) => {
   const ctx = await requireOrg(request, reply);
   if (!ctx) return;
 
   const { id } = request.params as { id: string };
-  const body = request.body as { description?: string; status?: string };
+  const body = request.body as {
+    steps?: unknown[];
+    decisionPath?: Array<{ stepId: string; chosenOption: string }>;
+    skippedStepIds?: string[];
+  } | null;
 
-  // Verify ticket exists and belongs to this org
-  const [existing] = await db
+  // 1. Fetch ticket and verify it's open
+  const [ticket] = await db
     .select()
     .from(tickets)
-    .where(eq(tickets.id, id));
-  if (!existing) return reply.status(404).send({ error: "ticket not found" });
-  if (existing.orgId !== ctx.orgId)
-    return reply.status(403).send({ error: "forbidden" });
+    .where(and(eq(tickets.ticketId, id), eq(tickets.orgId, ctx.orgId)));
 
-  const set: Record<string, unknown> = {};
-  if (body?.description !== undefined) set.description = body.description.trim();
-  if (body?.status !== undefined) set.status = body.status;
-  if (Object.keys(set).length === 0)
-    return reply.status(400).send({ error: "no fields to update" });
+  if (!ticket) return reply.status(404).send({ error: "ticket not found" });
+  if (ticket.status !== "open") {
+    return reply.status(409).send({
+      error: `ticket is ${ticket.status} — cannot commit`,
+      detail: "The ticket may have been superseded or already resolved. Reload to see the current state.",
+    });
+  }
+
+  // 2. Apply all edit diffs in a transaction
+  try {
+    await db.transaction(async (tx) => {
+      // Mark ticket as accepted
+      await tx
+        .update(tickets)
+        .set({
+          status: "accepted",
+          resolvedByUserId: ctx.userId,
+          resolvedAt: new Date(),
+          resolution: {
+            decisionPath: body?.decisionPath ?? [],
+            skippedStepIds: body?.skippedStepIds ?? [],
+            steps: (body?.steps as any[]) ?? [],
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(tickets.ticketId, id));
+
+      // Close write-pos rows if any
+      await tx
+        .update(ticketWritePos)
+        .set({ isOpen: false })
+        .where(eq(ticketWritePos.ticketId, id));
+
+      // Record in audit_log
+      await tx.insert(auditLog).values({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        ticketId: id,
+        tableName: "tickets",
+        rowKey: id,
+        operation: "commit",
+        changes: { status: "accepted" },
+      });
+
+      // If there are send steps, record in outbound_log
+      const sendStepIds =
+        (body?.steps as any[])?.filter((s: any) => s.kind === "send").map((s: any) => s.id) ?? [];
+      for (const stepId of sendStepIds) {
+        await tx.insert(outboundLog).values({
+          id: crypto.randomUUID(),
+          ticketId: id,
+          kind: "send",
+          sentAt: new Date(),
+        });
+      }
+    });
+  } catch (err: any) {
+    app.log.error(err, "commit transaction failed");
+    return reply.status(500).send({ error: "commit failed", detail: err?.message });
+  }
+
+  // 3. Notify PO subscribers + owner (fire-and-forget)
+  sendTicketNotification(ctx.orgId, id, "accepted", ctx.userId).catch((err) =>
+    app.log.error(err, "push notification failed"),
+  );
+
+  // 4. Return updated ticket
+  const [updated] = await db
+    .select()
+    .from(tickets)
+    .where(eq(tickets.ticketId, id));
+
+  return reply.status(200).send(updated);
+});
+
+// ─── Close (dismiss) ───────────────────────────────────────────────────────
+
+app.post("/api/tickets/:id/close", async (request, reply) => {
+  const ctx = await requireOrg(request, reply);
+  if (!ctx) return;
+
+  const { id } = request.params as { id: string };
+  const body = request.body as {
+    closedKind?: string;
+    closedReason?: string;
+  } | null;
+
+  const closedKind = body?.closedKind;
+  const closedReason = (body?.closedReason ?? "").trim();
+
+  if (!closedKind) {
+    return reply.status(400).send({ error: "closedKind is required" });
+  }
+
+  // 1. Fetch ticket
+  const [ticket] = await db
+    .select()
+    .from(tickets)
+    .where(and(eq(tickets.ticketId, id), eq(tickets.orgId, ctx.orgId)));
+
+  if (!ticket) return reply.status(404).send({ error: "ticket not found" });
+  if (ticket.status !== "open") {
+    return reply.status(409).send({ error: `ticket is already ${ticket.status}` });
+  }
+
+  // 2. Check: fact tickets (write_fact family) cannot be dismissed
+  const [kind] = await db
+    .select()
+    .from(ticketKinds)
+    .where(
+      and(
+        eq(ticketKinds.orgId, ctx.orgId),
+        eq(ticketKinds.key, ticket.kindKey),
+      ),
+    );
+
+  if (kind?.family === "write_fact" && closedKind === "dismissed") {
+    return reply.status(403).send({
+      error: "fact tickets cannot be dismissed",
+      detail: "ERP-fact tickets (#1, #6, #7, #8) must be accepted. Correct the values and accept instead.",
+    });
+  }
+
+  // 3. Close the ticket
+  await db
+    .update(tickets)
+    .set({
+      status: "closed",
+      closedKind: closedKind as any,
+      closedReason: closedReason || null,
+      resolvedByUserId: ctx.userId,
+      resolvedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(tickets.ticketId, id));
+
+  // 4. Record in ingestion_events for suppression memory
+  await db.insert(ingestionEvents).values({
+    orgId: ctx.orgId,
+    channel: "buyer_cc",
+    semanticHash: `dismissed:${id}`,
+    outcome: "suppressed_dismissed",
+    ticketId: id,
+    payload: { closedKind, closedReason },
+  });
+
+  // 5. Notify
+  sendTicketNotification(ctx.orgId, id, "closed", ctx.userId).catch((err) =>
+    app.log.error(err, "push notification failed"),
+  );
 
   const [updated] = await db
-    .update(tickets)
-    .set(set)
-    .where(eq(tickets.id, id))
-    .returning();
+    .select()
+    .from(tickets)
+    .where(eq(tickets.ticketId, id));
 
-  // Fire push notification (don't block response)
-  sendTicketNotification(ctx.orgId, id, "updated", ctx.userId).catch((err) =>
-    app.log.error(err, "push notification failed"),
-  );
-
-  return updated;
+  return reply.status(200).send(updated);
 });
 
-// Delete a ticket
-app.delete("/api/tickets/:id", async (request, reply) => {
+// ─── PO detail ─────────────────────────────────────────────────────────────
+
+app.get("/api/pos/:id", async (request, reply) => {
   const ctx = await requireOrg(request, reply);
   if (!ctx) return;
 
   const { id } = request.params as { id: string };
 
-  const [existing] = await db
+  const [po] = await db
+    .select()
+    .from(purchaseOrders)
+    .where(
+      and(
+        eq(purchaseOrders.orgId, ctx.orgId),
+        eq(purchaseOrders.poId, id),
+      ),
+    );
+
+  if (!po) return reply.status(404).send({ error: "PO not found" });
+
+  const lines = await db
+    .select()
+    .from(poLines)
+    .where(eq(poLines.poId, id))
+    .orderBy(poLines.lineId);
+
+  // All tickets for this PO (including closed, for timeline)
+  const poTickets = await db
     .select()
     .from(tickets)
-    .where(eq(tickets.id, id));
-  if (!existing) return reply.status(404).send({ error: "ticket not found" });
-  if (existing.orgId !== ctx.orgId)
-    return reply.status(403).send({ error: "forbidden" });
+    .where(
+      and(
+        eq(tickets.orgId, ctx.orgId),
+        eq(tickets.poId, id),
+      ),
+    )
+    .orderBy(desc(tickets.createdAt));
 
-  await db.delete(tickets).where(eq(tickets.id, id));
-  return reply.status(204).send();
+  return { ...po, lines, tickets: poTickets };
 });
 
-// ─── Push Token Registration ───────────────────────────────────────────
+// ─── Ticket evidence ───────────────────────────────────────────────────────
+
+app.get("/api/tickets/:id/evidence", async (request, reply) => {
+  const ctx = await requireOrg(request, reply);
+  if (!ctx) return;
+
+  const { id } = request.params as { id: string };
+
+  const evidence = await db
+    .select()
+    .from(ticketEvidence)
+    .where(eq(ticketEvidence.ticketId, id));
+
+  const emailIds = evidence
+    .map((e) => e.emailMessageId)
+    .filter((eid): eid is string => eid !== null);
+
+  let emails: (typeof emailMessages.$inferSelect)[] = [];
+  if (emailIds.length > 0) {
+    emails = await db
+      .select()
+      .from(emailMessages)
+      .where(inArray(emailMessages.id, emailIds))
+      .orderBy(desc(emailMessages.receivedAt));
+  }
+
+  return { evidence, emails };
+});
+
+// ─── Push Token Registration ───────────────────────────────────────────────
 
 app.post("/api/push-token", async (request, reply) => {
   const ctx = await requireSession(request, reply);
@@ -253,7 +536,6 @@ app.post("/api/push-token", async (request, reply) => {
   const token = (body?.token ?? "").trim();
   if (!token) return reply.status(400).send({ error: "token required" });
 
-  // Upsert — activate if exists, insert if new
   await db
     .insert(pushTokens)
     .values({
@@ -270,7 +552,6 @@ app.post("/api/push-token", async (request, reply) => {
   return reply.status(200).send({ ok: true });
 });
 
-// Deactivate a push token
 app.delete("/api/push-token", async (request, reply) => {
   const ctx = await requireSession(request, reply);
   if (!ctx) return;
@@ -287,7 +568,7 @@ app.delete("/api/push-token", async (request, reply) => {
   return reply.status(200).send({ ok: true });
 });
 
-// ─── Start ─────────────────────────────────────────────────────────────
+// ─── Start ─────────────────────────────────────────────────────────────────
 
 const port = Number(process.env.PORT ?? 4000);
 app

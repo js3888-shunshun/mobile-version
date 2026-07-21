@@ -13,4 +13,4 @@ export { schema };
 export * from "./schema.js";
 
 // Re-export common query operators
-export { eq, and, or, sql, desc, asc, ne, inArray } from "drizzle-orm";
+export { eq, and, or, sql, desc, asc, ne, inArray, gt, lt, gte, lte, isNull, isNotNull } from "drizzle-orm";

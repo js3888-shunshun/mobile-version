@@ -1,5 +1,5 @@
 import { Expo } from "expo-server-sdk";
-import { db, pushTokens, member, tickets, user, eq, and, inArray, ne } from "@mobile/db";
+import { db, pushTokens, member, tickets, ticketKinds, user, eq, and, inArray, ne } from "@mobile/db";
 
 const expo = new Expo();
 
@@ -10,28 +10,24 @@ const expo = new Expo();
 export async function sendTicketNotification(
   orgId: string,
   ticketId: string,
-  action: "created" | "updated",
+  action: "created" | "updated" | "accepted" | "closed",
   actorId?: string,
 ) {
-  console.log(`[push] sendTicketNotification called: orgId=${orgId}, ticketId=${ticketId}, action=${action}, actorId=${actorId ?? "none"}`);
+  console.log(`[push] sendTicketNotification: orgId=${orgId}, ticketId=${ticketId}, action=${action}, actorId=${actorId ?? "none"}`);
 
   // 1. Get ticket info for the notification body
   const [ticket] = await db
-    .select({ description: tickets.description, status: tickets.status })
+    .select({ title: tickets.title, kindKey: tickets.kindKey, status: tickets.status })
     .from(tickets)
-    .where(eq(tickets.id, ticketId));
-  console.log(`[push] ticket fetch: ${ticket ? "found" : "NOT FOUND"}, description=${ticket?.description?.slice(0, 30) ?? "n/a"}`);
+    .where(eq(tickets.ticketId, ticketId));
+  console.log(`[push] ticket: ${ticket ? `"${ticket.title}" (${ticket.kindKey})` : "NOT FOUND"}`);
 
   // 2. Find all members of this org (excluding the actor)
   const members = await db
     .select()
     .from(member)
-    .where(
-      actorId
-        ? and(eq(member.organizationId, orgId), ne(member.userId, actorId))
-        : eq(member.organizationId, orgId),
-    );
-  console.log(`[push] org members (excluding actor): ${members.length}`);
+    .where(eq(member.organizationId, orgId));
+  console.log(`[push] org members: ${members.length}`);
 
   if (!members.length) {
     console.log("[push] No other members to notify — exiting");
@@ -51,15 +47,11 @@ export async function sendTicketNotification(
   console.log(`[push] active push tokens found: ${tokens.length}`);
 
   if (!tokens.length) {
-    console.log("[push] No active push tokens for these members — exiting");
+    console.log("[push] No active push tokens — exiting");
     return;
   }
 
-  for (const t of tokens) {
-    console.log(`[push] token: ${t.token.slice(0, 30)}… userId=${t.userId}`);
-  }
-
-  // 4. Get actor name for richer notifications
+  // 4. Get actor name
   let actorName: string | undefined;
   if (actorId) {
     const [u] = await db
@@ -68,26 +60,44 @@ export async function sendTicketNotification(
       .where(eq(user.id, actorId));
     actorName = u?.name;
   }
-  console.log(`[push] actor name: ${actorName ?? "unknown"}`);
+  console.log(`[push] actor: ${actorName ?? "unknown"}`);
 
   // 5. Build messages
-  const description = ticket?.description ?? "ticket";
-  const truncated = description.length > 80 ? description.slice(0, 77) + "…" : description;
+  const title = ticket?.title ?? "Ticket update";
+  const truncated =
+    title.length > 80 ? title.slice(0, 77) + "…" : title;
   const who = actorName ?? "Someone";
-  const title =
-    action === "created" ? `New ticket by ${who}` : `Ticket updated by ${who}`;
+
+  let pushTitle: string;
+  switch (action) {
+    case "accepted":
+      pushTitle = `Ticket accepted by ${who}`;
+      break;
+    case "closed":
+      pushTitle = `Ticket closed by ${who}`;
+      break;
+    case "created":
+      pushTitle = `New ticket by ${who}`;
+      break;
+    case "updated":
+      pushTitle = `Ticket updated by ${who}`;
+      break;
+    default:
+      pushTitle = `Ticket ${action} by ${who}`;
+  }
+
   const body = `"${truncated}"`;
-  console.log(`[push] message: title="${title}", body="${body}"`);
+  console.log(`[push] message: title="${pushTitle}", body="${body}"`);
 
   const messages = tokens.map((t) => ({
     to: t.token,
     sound: "default" as const,
-    title,
+    title: pushTitle,
     body,
-    data: { type: "ticket_update", ticketId },
+    data: { type: "ticket_update", ticketId, action, kindKey: ticket?.kindKey },
   }));
 
-  // 6. Dispatch in batches (Expo allows up to 100 per request)
+  // 6. Dispatch in batches
   const chunks = expo.chunkPushNotifications(messages);
   console.log(`[push] dispatching ${messages.length} messages in ${chunks.length} chunk(s)`);
 
@@ -96,12 +106,14 @@ export async function sendTicketNotification(
       const ticketReceipts = await expo.sendPushNotificationsAsync(chunk);
       console.log(`[push] dispatched chunk: ${ticketReceipts.length} receipts`);
 
-      // Handle DeviceNotRegistered errors — deactivate bad tokens
       for (let i = 0; i < ticketReceipts.length; i++) {
         const receipt = ticketReceipts[i];
-        console.log(`[push] receipt[${i}]: status=${receipt.status}` + (receipt.status === "error" ? `, message=${(receipt as any).message}, details=${JSON.stringify((receipt as any).details)}` : ""));
         if (receipt.status === "error") {
-          const detail = receipt as { status: "error"; message: string; details?: { error?: string } };
+          const detail = receipt as {
+            status: "error";
+            message: string;
+            details?: { error?: string };
+          };
           if (detail.details?.error === "DeviceNotRegistered") {
             const badToken = chunk[i].to as string;
             console.log("[push] deactivating DeviceNotRegistered token:", badToken.slice(0, 20) + "…");
