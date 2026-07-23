@@ -11,8 +11,8 @@ A mobile POC for organization-scoped ticket CRUD with real-time cross-device syn
 3. [Environment Configuration](#3-environment-configuration)
 4. [PostgreSQL Setup](#4-postgresql-setup)
 5. [EAS / Expo Setup](#5-eas--expo-setup)
-6. [Run Locally (Development Mode)](#6-run-locally-development-mode)
-7. [Build & Install on iPhone](#7-build--install-on-iphone)
+6. [Build & Install on iPhone](#6-build--install-on-iphone)
+7. [Run Locally (Development Mode)](#7-run-locally-development-mode)
 8. [Testing on a Second Device](#8-testing-on-a-second-device)
 9. [Project Structure](#9-project-structure)
 10. [Common Issues](#10-common-issues)
@@ -35,6 +35,10 @@ You also need these **accounts**:
 - **Expo account** (free) — sign up at [expo.dev](https://expo.dev/signup)
 - **Apple Developer account** ($99/year) — enroll at [developer.apple.com](https://developer.apple.com/develop/)  
   *Required to build and install the app on a physical iPhone.*
+
+### Why not Expo Go?
+
+Expo Go has been stuck in App Store review for several releases and is not available for SDK 57. The only way to run the app on a physical iPhone is via an EAS Development Build. The sections below walk through this process step by step.
 
 ---
 
@@ -63,7 +67,7 @@ Two `.env` files are needed.
 
 ### 3.1 Root `.env` — Server / Database
 
-Create a file at the project root: `/mobile-version/.env`
+Create a file at the project root: `mobile-version/.env`
 
 ```bash
 DATABASE_URL=postgres://<user>:<password>@<host>:5432/<dbname>
@@ -87,7 +91,7 @@ BETTER_AUTH_URL=http://192.168.1.100:4000
 
 ### 3.2 Mobile `.env` — Expo API URL
 
-Create a file at: `/mobile-version/apps/mobile/.env`
+Create a file at: `mobile-version/apps/mobile/.env`
 
 ```bash
 EXPO_PUBLIC_API_URL=http://<your-server-ip>:4000
@@ -103,7 +107,7 @@ EXPO_PUBLIC_API_URL=http://192.168.1.100:4000
 
 ### 3.3 EAS Build Credentials (for building to device)
 
-Create a file at: `/root/.eas-build-env` (or anywhere; you'll `source` it before building)
+Create a file at `~/.eas-build-env` (or anywhere convenient; you'll `source` it before building):
 
 ```bash
 export EXPO_TOKEN=<your-expo-access-token>
@@ -118,10 +122,10 @@ export EXPO_APPLE_API_KEY_FILE_PATH=/absolute/path/to/AuthKey_XXXXXX.p8
 2. **Apple API Key** — go to [App Store Connect → Users and Access → Integrations → API Keys](https://appstoreconnect.apple.com/access/api), create a new key with **Developer** access. Download the `.p8` file and note the **Key ID** and **Issuer ID**.
 3. Put the `.p8` file somewhere permanent (e.g., `~/.appstore/AuthKey_XXXXXX.p8`) and point `EXPO_APPLE_API_KEY_FILE_PATH` to it.
 
-Save this file. Before any EAS build, run:
+Before any EAS build command, run:
 
 ```bash
-source /path/to/your/eas-build-env
+source ~/.eas-build-env
 ```
 
 ---
@@ -188,9 +192,85 @@ eas init --id <your-expo-project-id>
 
 ---
 
-## 6. Run Locally (Development Mode)
+## 6. Build & Install on iPhone
 
-Open **two terminal windows**. Both must stay running.
+This is the **first thing you should do** after setup. The EAS build creates a development client `.ipa` that you install on your phone. Later, when you run the app, it will connect back to your local Metro dev server to load the JavaScript bundle.
+
+The build happens on Expo's servers and takes **10–20 minutes**.
+
+### 6.1 Get Your iPhone UDID
+
+On your iPhone, open **Safari** and go to:
+
+```
+https://udid.tech
+```
+
+1. Tap "Tap to Get Your UDID".
+2. Tap "Allow" to download the configuration profile.
+3. Open **Settings** → you'll see "Profile Downloaded" at the top. Tap it.
+4. Tap "Install" → enter your passcode → "Install" again → "Done".
+5. Safari will now display your UDID (a long hex string like `00008110-XXXXXXXX`).
+6. Copy it — you'll need it in the next step.
+
+### 6.2 Register Your Device
+
+```bash
+cd apps/mobile
+source ~/.eas-build-env
+eas device:create
+```
+
+Follow the prompts:
+
+| Prompt | Your input |
+|---|---|
+| Use the `<your-expo-account>` account? | `y` |
+| Apple ID | Your Apple Developer email |
+| Password | Your Apple ID password |
+| How would you like to register? | Choose **Input** (type UDIDs manually) |
+| UDID | Paste the UDID from step 6.1 |
+| Device name | Any name, e.g. `My iPhone` |
+| Device class | Choose **iPhone** |
+| Is this what you want? | `y` |
+| Register another? | `n` |
+
+### 6.3 Build the App
+
+```bash
+source ~/.eas-build-env
+eas build --platform ios --profile development
+```
+
+EAS will upload your code and start building. When prompted **"Would you like to choose the devices to provision again?"** → choose `y`, then use **Space** to select your device (◉), and **Enter** to confirm.
+
+You can close the terminal — the build happens on Expo's servers. To check progress:
+
+```bash
+eas build:list
+```
+
+### 6.4 Install on Your Phone
+
+When the build completes, you'll see a QR code and a link. Open your iPhone Camera app, scan the QR code, and tap the notification to install.
+
+If you get **"This app cannot be installed because its integrity could not be verified"**:
+
+- Your device UDID was not included in the provisioning profile. Re-run `eas device:create` to make sure the device is registered, then rebuild.
+
+After installation, the first launch will fail — iOS blocks unverified enterprise apps. Go to:
+
+**Settings → General → VPN & Device Management → (your Apple Developer name) → Trust**
+
+Then open the app again. It will show the dev client launcher screen — this is normal. It's waiting for a Metro dev server to connect to (next section).
+
+---
+
+## 7. Run Locally (Development Mode)
+
+> **Prerequisite:** You must have the development build installed on your phone (section 6) before this step.
+
+Open **two terminal windows**. Both must stay running while you use the app.
 
 ### Terminal 1: Backend Server (port 4000)
 
@@ -220,101 +300,21 @@ cd apps/mobile
 EXPO_NO_METRO_WORKSPACE_ROOT=true npx expo start
 ```
 
-After Metro finishes bundling, you'll see a QR code and:
+After Metro finishes bundling, you'll see:
 
 ```
 › Metro waiting on http://localhost:8081
-› Scan the QR code above with Expo Go (Android) or the Camera app (iOS)
 ```
 
-### 6.1 About Expo Go
+This Metro dev server does **not** serve Expo Go. It serves the JavaScript bundle to the development build you installed in section 6.
 
-> **Expo Go does not support this project.**  
-> As of SDK 57, Expo Go has been stuck in App Store review for several releases and is not available for the current SDK version. You must use an EAS Development Build (section 7) to run the app on a physical iPhone. The Expo dev server below still runs — it serves the JavaScript bundle to your development build, not to Expo Go.
+### 7.1 Connect the App to Metro
 
----
+1. Open the Mobile Tickets app on your iPhone.
+2. If the dev client launcher appears, enter the Metro server URL: `exp://<your-ip>:8081` (e.g., `exp://192.168.1.100:8081`).
+3. The app loads your JavaScript from Metro and you can sign up / log in.
 
-## 7. Build & Install on iPhone
-
-Since Expo Go is unavailable for SDK 57, you need an **EAS Development Build** installed directly on your device.
-
-### 7.1 Get Your iPhone UDID
-
-On your iPhone, open **Safari** and go to:
-
-```
-https://udid.tech
-```
-
-1. Tap "Tap to Get Your UDID".
-2. Tap "Allow" to download the configuration profile.
-3. Open **Settings** → you'll see "Profile Downloaded" at the top. Tap it.
-4. Tap "Install" → enter your passcode → "Install" again → "Done".
-5. Safari will now display your UDID (a long hex string like `00008110-XXXXXXXX`).
-6. Copy it or keep the page open — you'll need it in the next step.
-
-### 7.2 Register Your Device
-
-```bash
-cd apps/mobile
-source /path/to/your/eas-build-env   # the file from section 3.3
-eas device:create
-```
-
-Follow the prompts:
-
-| Prompt | Your input |
-|---|---|
-| Use the `<your-expo-account>` account? | `y` |
-| Apple ID | Your Apple Developer email |
-| Password | Your Apple ID password |
-| How would you like to register? | Choose **Input** (type UDIDs manually) |
-| UDID | Paste the UDID from step 7.1 |
-| Device name | Any name, e.g. `My iPhone` |
-| Device class | Choose **iPhone** |
-| Is this what you want? | `y` |
-| Register another? | `n` |
-
-### 7.3 Build the App
-
-```bash
-source /path/to/your/eas-build-env
-eas build --platform ios --profile development
-```
-
-You'll see output as EAS uploads your code and starts building. The build takes **10–20 minutes**.
-
-When prompted "Would you like to choose the devices to provision again?" → choose `y`, then use **Space** to select your devices and **Enter** to confirm.
-
-You can close the terminal — the build happens on Expo's servers. To check progress:
-
-```bash
-eas build:list
-```
-
-### 7.4 Install on Your Phone
-
-When the build completes, you'll see a QR code and a link. Open your iPhone Camera app, scan the QR code, and tap the notification to install.
-
-If you get **"This app cannot be installed because its integrity could not be verified"**:
-
-- Your device UDID was not included in the provisioning profile. Re-run `eas device:create` to make sure the device is registered, then rebuild.
-
-After installation, the first launch will fail with a white screen — this is because iOS blocks unverified enterprise apps. Go to:
-
-**Settings → General → VPN & Device Management → (your Apple Developer name) → Trust**
-
-Then open the app again.
-
-### 7.5 Connect to the Dev Server
-
-The development build is a **shell** — it still needs to load your JavaScript from the Metro dev server. Make sure Terminal 2 from section 6 is running.
-
-1. Open the app.
-2. If prompted, enter the dev server URL: `exp://<your-ip>:8081` (e.g., `exp://192.168.1.100:8081`).
-3. The app loads and you can sign up / log in.
-
-> If the app crashes immediately (white screen + crash), your Metro dev server might not be running or the phone can't reach it. Check Terminal 2 and make sure both devices are on the same WiFi.
+> If the app crashes immediately on launch, check that both terminals are running and the phone can reach your machine's IP (same WiFi network, no firewall blocking port 8081).
 
 ---
 
@@ -324,9 +324,11 @@ To install the app on another iPhone (for multi-user push notification testing):
 
 ### 8.1 Register the second device
 
-Get the second phone's UDID (same process as [7.1](#71-get-your-iphone-udid)), then:
+Get the second phone's UDID (same process as [6.1](#61-get-your-iphone-udid)), then:
 
 ```bash
+cd apps/mobile
+source ~/.eas-build-env
 eas device:create
 ```
 
@@ -335,7 +337,7 @@ Enter the new UDID. If your original device is already registered, answer `y` wh
 ### 8.2 Rebuild
 
 ```bash
-source /path/to/your/eas-build-env
+source ~/.eas-build-env
 eas build --platform ios --profile development
 ```
 
@@ -419,7 +421,7 @@ Then re-run `npx expo start`.
 - **iOS 26 beta** may have compatibility issues with Expo SDK 57. Try on a non-beta iOS version.
 - Make sure `pnpm install` ran successfully and the postinstall patch was applied.
 - Check that both Terminal 1 (server) and Terminal 2 (Expo) are running.
-- The dev client needs to connect to Metro — make sure the phone can reach your machine's IP on port 8081.
+- The dev client needs to reach your machine's IP on port 8081 — same WiFi, no firewall.
 
 ### Push notifications not arriving
 
