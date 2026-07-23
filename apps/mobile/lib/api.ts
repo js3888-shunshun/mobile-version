@@ -115,11 +115,10 @@ async function apiFetch<T = unknown>(
 // ─── Tickets ─────────────────────────────────────────────────
 
 export function useTickets() {
-  debug.log("API", "useTickets hook mounted");
   return useQuery({
     queryKey: ["tickets"],
     queryFn: () => apiFetch<Ticket[]>("/api/tickets"),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -148,6 +147,7 @@ export function useCommitTicket() {
           steps: data.steps,
           decisionPath: data.decisionPath,
           skippedStepIds: data.skippedStepIds,
+          todoStepIds: data.todoStepIds,
         }),
       }),
     onSuccess: () => {

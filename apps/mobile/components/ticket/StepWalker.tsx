@@ -111,6 +111,12 @@ function getActiveSteps(
 interface StepWalkerProps {
   steps: TicketStep[];
   state: StepWalkerState;
+  readonly?: boolean;
+  /** Pre-filled decisions for readonly mode (from resolution.decisionPath). */
+  decisions?: Record<string, string>;
+  /** Pre-filled todos for readonly mode (from resolution.todoStepIds). */
+  todosDone?: Set<string>;
+  onBodyFocus?: () => void;
   onDecisionChange: (stepId: string, optionKey: string) => void;
   onTodoToggle: (stepId: string, done: boolean) => void;
   onSkipToggle: (stepId: string, skip: boolean) => void;
@@ -126,13 +132,21 @@ interface StepWalkerProps {
 export function StepWalker({
   steps,
   state,
+  readonly = false,
+  decisions: decisionsOverride,
+  todosDone: todosDoneOverride,
+  onBodyFocus,
   onDecisionChange,
   onTodoToggle,
   onSkipToggle,
   onEditDraftChange,
   onSendDraftChange,
 }: StepWalkerProps) {
-  const activeSteps = getActiveSteps(steps, state.decisions);
+  const effectiveDecisions =
+    decisionsOverride && Object.keys(decisionsOverride).length > 0
+      ? decisionsOverride
+      : state.decisions;
+  const activeSteps = getActiveSteps(steps, effectiveDecisions);
   const allSteps = flattenSteps(steps);
 
   return (
@@ -185,7 +199,7 @@ export function StepWalker({
             {isSkipped ? null : step.kind === "edit" && step.targets ? (
               <EditStep
                 targets={step.targets}
-                editable
+                editable={!readonly}
                 onDiffEdit={(ti, field, val) =>
                   onEditDraftChange(step.id, ti, field, val)
                 }
@@ -193,22 +207,30 @@ export function StepWalker({
             ) : step.kind === "send" ? (
               <SendStep
                 step={step}
-                editable
+                editable={!readonly}
+                draftValues={readonly ? undefined : state.sendDrafts[step.id]}
                 onDraftEdit={(field, val) =>
                   onSendDraftChange(step.id, field, val)
                 }
                 onSkip={() => onSkipToggle(step.id, true)}
+                onBodyFocus={onBodyFocus}
               />
             ) : step.kind === "decision" ? (
               <DecisionStep
                 step={step}
-                selectedOption={state.decisions[step.id] ?? null}
+                selectedOption={effectiveDecisions[step.id] ?? null}
+                readonly={readonly}
                 onSelectOption={(key) => onDecisionChange(step.id, key)}
               />
             ) : step.kind === "todo" ? (
               <TodoStep
                 step={step}
-                done={state.todosDone.has(step.id)}
+                done={
+                  todosDoneOverride && todosDoneOverride.size > 0
+                    ? todosDoneOverride.has(step.id)
+                    : state.todosDone.has(step.id)
+                }
+                readonly={readonly}
                 onToggle={(done) => onTodoToggle(step.id, done)}
               />
             ) : null}

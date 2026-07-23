@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { View, Text } from "react-native";
 import type { Ticket } from "@mobile/shared";
 import { Card } from "./ui/card";
@@ -12,18 +13,22 @@ const familyBadge: Record<string, "default" | "warning" | "success" | "destructi
   recommendation: "success",
 };
 
-export function TicketCard({ ticket }: { ticket: Ticket }) {
+const statusVariant: Record<string, "warning" | "success" | "secondary"> = {
+  open: "warning",
+  accepted: "success",
+  closed: "secondary",
+};
+
+export const TicketCard = memo(function TicketCard({ ticket }: { ticket: Ticket }) {
   return (
     <Card className="gap-2">
       <View className="flex-row justify-between items-start">
         <Text className="text-base font-medium flex-1 mr-2" numberOfLines={2}>
           {ticket.title}
         </Text>
-        {ticket.hasWrites ? (
-          <View className="bg-blue-100 rounded-full px-2 py-0.5">
-            <Text className="text-xs text-blue-700 font-medium">Write</Text>
-          </View>
-        ) : null}
+        <Badge variant={statusVariant[ticket.status] ?? "secondary"}>
+          {ticket.status}
+        </Badge>
       </View>
 
       {ticket.creationReason ? (
@@ -58,4 +63,4 @@ export function TicketCard({ ticket }: { ticket: Ticket }) {
       </Text>
     </Card>
   );
-}
+});

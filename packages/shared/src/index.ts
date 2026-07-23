@@ -253,6 +253,8 @@ export interface CommitTicketPayload {
   decisionPath: Array<{ stepId: string; chosenOption: string }>;
   /** IDs of optional steps the buyer chose to skip. */
   skippedStepIds: string[];
+  /** IDs of todo steps the buyer marked as done. */
+  todoStepIds: string[];
 }
 
 export interface CloseTicketPayload {

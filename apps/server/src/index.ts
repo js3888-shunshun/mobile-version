@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import swagger from "@fastify/swagger";
+import swaggerUI from "@fastify/swagger-ui";
 import {
   db,
   tickets,
@@ -18,6 +20,7 @@ import {
   auditLog,
   outboundLog,
   eq,
+  ne,
   and,
   inArray,
   desc,
@@ -42,6 +45,27 @@ await app.register(cors, {
   credentials: true,
 });
 
+// ─── Swagger ────────────────────────────────────────────────────────────────
+
+await app.register(swagger, {
+  openapi: {
+    info: {
+      title: "Ticket System API",
+      description: "Mobile-version ticket server — create, inspect, commit, and close tickets.",
+      version: "2.0.0",
+    },
+    servers: [{ url: "http://172.105.135.182:4000", description: "Production" }],
+  },
+});
+
+await app.register(swaggerUI, {
+  routePrefix: "/docs",
+  uiConfig: {
+    docExpansion: "list",
+    deepLinking: true,
+  },
+});
+
 // ─── Health ────────────────────────────────────────────────────────────────
 
 app.get("/health", async () => ({
@@ -50,26 +74,102 @@ app.get("/health", async () => ({
   time: new Date().toISOString(),
 }));
 
-// ─── Better Auth handler ───────────────────────────────────────────────────
+// ─── Better Auth helper ──────────────────────────────────────────────────────
+
+async function handleAuthRequest(request: any, reply: any) {
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  const req = new Request(url.toString(), {
+    method: request.method,
+    headers: fromNodeHeaders(request.headers),
+    ...(request.body ? { body: JSON.stringify(request.body) } : {}),
+  });
+  const response = await auth.handler(req);
+  reply.status(response.status);
+  const setCookies = response.headers.getSetCookie?.() ?? [];
+  if (setCookies.length) reply.header("set-cookie", setCookies);
+  response.headers.forEach((value: string, key: string) => {
+    if (key.toLowerCase() !== "set-cookie") reply.header(key, value);
+  });
+  const body = response.body ? await response.text() : null;
+  try { return body ? JSON.parse(body) : null; } catch { return body; }
+}
+
+// ─── Explicit auth routes (documented for Swagger) ──────────────────────────
+
+app.post("/api/auth/sign-in/email", {
+  schema: {
+    description: "Sign in with email and password",
+    tags: ["auth"],
+    body: {
+      type: "object",
+      required: ["email", "password"],
+      properties: {
+        email: { type: "string", format: "email" },
+        password: { type: "string" },
+        rememberMe: { type: "boolean" },
+      },
+    },
+  },
+}, async (request, reply) => handleAuthRequest(request, reply));
+
+app.post("/api/auth/sign-up/email", {
+  schema: {
+    description: "Create a new account",
+    tags: ["auth"],
+    body: {
+      type: "object",
+      required: ["email", "password", "name"],
+      properties: {
+        email: { type: "string", format: "email" },
+        password: { type: "string" },
+        name: { type: "string" },
+      },
+    },
+  },
+}, async (request, reply) => handleAuthRequest(request, reply));
+
+app.post("/api/auth/sign-out", {
+  schema: {
+    description: "Sign out the current session",
+    tags: ["auth"],
+  },
+}, async (request, reply) => handleAuthRequest(request, reply));
+
+app.get("/api/auth/session", {
+  schema: {
+    description: "Get the current session",
+    tags: ["auth"],
+  },
+}, async (request, reply) => handleAuthRequest(request, reply));
+
+app.get("/api/auth/organization/list", {
+  schema: {
+    description: "List organizations for the current user",
+    tags: ["auth"],
+  },
+}, async (request, reply) => handleAuthRequest(request, reply));
+
+app.post("/api/auth/organization/set-active", {
+  schema: {
+    description: "Set the active organization for this session",
+    tags: ["auth"],
+    body: {
+      type: "object",
+      required: ["organizationId"],
+      properties: {
+        organizationId: { type: "string", description: "The org ID from GET /api/auth/organization/list" },
+      },
+    },
+  },
+}, async (request, reply) => handleAuthRequest(request, reply));
+
+// ─── Better Auth wildcard handler (catch-all for other auth routes) ──────────
 
 app.route({
   method: ["GET", "POST"],
   url: "/api/auth/*",
   async handler(request, reply) {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    const req = new Request(url.toString(), {
-      method: request.method,
-      headers: fromNodeHeaders(request.headers),
-      ...(request.body ? { body: JSON.stringify(request.body) } : {}),
-    });
-    const response = await auth.handler(req);
-    reply.status(response.status);
-    const setCookies = response.headers.getSetCookie?.() ?? [];
-    if (setCookies.length) reply.header("set-cookie", setCookies);
-    response.headers.forEach((value, key) => {
-      if (key.toLowerCase() !== "set-cookie") reply.header(key, value);
-    });
-    return reply.send(response.body ? await response.text() : null);
+    return handleAuthRequest(request, reply);
   },
 });
 
@@ -103,10 +203,31 @@ async function requireOrg(
     reply.status(401).send({ error: "unauthorized" });
     return null;
   }
-  const orgId = (s.session as { activeOrganizationId?: string | null })
+  let orgId = (s.session as { activeOrganizationId?: string | null })
     .activeOrganizationId;
+
+  // Auto-pick first org if none is set
   if (!orgId) {
-    reply.status(400).send({ error: "no active organization" });
+    const [memberRow] = await db
+      .select({ organizationId: member.organizationId })
+      .from(member)
+      .where(eq(member.userId, s.user.id))
+      .limit(1);
+
+    if (memberRow) {
+      orgId = memberRow.organizationId;
+      // Persist it back to the session
+      try {
+        await auth.api.setActiveOrganization({
+          body: { organizationId: orgId },
+          headers: fromNodeHeaders(request.headers),
+        });
+      } catch { /* best-effort */ }
+    }
+  }
+
+  if (!orgId) {
+    reply.status(400).send({ error: "no active organization — user is not a member of any org" });
     return null;
   }
   return { userId: s.user.id, orgId };
@@ -179,23 +300,114 @@ app.get("/api/ticket-kinds", async (request, reply) => {
     .orderBy(ticketKinds.title);
 });
 
-// ─── List tickets for org (open only) ──────────────────────────────────────
+// ─── List tickets for org ───────────────────────────────────────────────────
 
 app.get("/api/tickets", async (request, reply) => {
   const ctx = await requireOrg(request, reply);
   if (!ctx) return;
 
-  // Only return open tickets — draft is agent-internal, accepted/closed are timeline
+  // Return all non-draft tickets — open, accepted, and closed
   return db
     .select()
     .from(tickets)
     .where(
       and(
         eq(tickets.orgId, ctx.orgId),
-        eq(tickets.status, "open"),
+        ne(tickets.status, "draft"),
       ),
     )
     .orderBy(desc(tickets.createdAt));
+});
+
+// ─── Create ticket (for Swagger / testing) ──────────────────────────────────
+
+app.post("/api/tickets", {
+  schema: {
+    description: "Create a new ticket (for testing purposes)",
+    tags: ["tickets"],
+    body: {
+      type: "object",
+      required: ["kindKey", "title", "steps"],
+      properties: {
+        kindKey: { type: "string", description: "e.g. po_creation, full_acknowledgement, pre_ack_modification, whole_po_rejection, partial_acknowledgement" },
+        title: { type: "string" },
+        creationReason: { type: "string", default: "Manual test" },
+        poId: { type: "string", format: "uuid", description: "Optional PO UUID" },
+        supplierCode: { type: "string", description: "Optional supplier code" },
+        steps: {
+          type: "array",
+          description: "TicketStep[] JSON array — the step pipeline",
+          items: { type: "object" },
+        },
+      },
+    },
+    response: {
+      201: {
+        type: "object",
+        properties: {
+          ticketId: { type: "string" },
+          title: { type: "string" },
+          status: { type: "string" },
+        },
+      },
+    },
+  },
+}, async (request, reply) => {
+  const ctx = await requireOrg(request, reply);
+  if (!ctx) return;
+
+  const body = request.body as {
+    kindKey?: string;
+    title?: string;
+    creationReason?: string;
+    poId?: string;
+    supplierCode?: string;
+    steps?: unknown[];
+  };
+
+  if (!body?.kindKey || !body?.title) {
+    return reply.status(400).send({ error: "kindKey and title are required" });
+  }
+
+  // Verify the ticket kind exists for this org
+  const [kind] = await db
+    .select()
+    .from(ticketKinds)
+    .where(
+      and(
+        eq(ticketKinds.orgId, ctx.orgId),
+        eq(ticketKinds.key, body.kindKey),
+      ),
+    );
+
+  if (!kind) {
+    return reply.status(400).send({
+      error: `Unknown ticket kind "${body.kindKey}" for this org. Use GET /api/ticket-kinds to list available kinds.`,
+    });
+  }
+
+  const [created] = await db
+    .insert(tickets)
+    .values({
+      orgId: ctx.orgId,
+      kindKey: body.kindKey,
+      title: body.title,
+      status: "open",
+      hasWrites: kind.isWriteBearing,
+      creationReason: body.creationReason ?? "Manual test",
+      poId: body.poId ?? null,
+      supplierCode: body.supplierCode ?? null,
+      steps: (body.steps as any[]) ?? [],
+      createdByUserId: ctx.userId,
+    })
+    .returning({ ticketId: tickets.ticketId, title: tickets.title, status: tickets.status });
+
+  // Notify other org members via push
+  sendTicketNotification(ctx.orgId, created.ticketId, "created", ctx.userId).catch((err) =>
+    app.log.error(err, "push notification failed"),
+  );
+
+  return reply.status(201).send(created);
 });
 
 // ─── Single ticket with relations ──────────────────────────────────────────
@@ -289,6 +501,7 @@ app.post("/api/tickets/:id/commit", async (request, reply) => {
     steps?: unknown[];
     decisionPath?: Array<{ stepId: string; chosenOption: string }>;
     skippedStepIds?: string[];
+    todoStepIds?: string[];
   } | null;
 
   // 1. Fetch ticket and verify it's open
@@ -318,6 +531,7 @@ app.post("/api/tickets/:id/commit", async (request, reply) => {
           resolution: {
             decisionPath: body?.decisionPath ?? [],
             skippedStepIds: body?.skippedStepIds ?? [],
+            todoStepIds: body?.todoStepIds ?? [],
             steps: (body?.steps as any[]) ?? [],
           },
           updatedAt: new Date(),

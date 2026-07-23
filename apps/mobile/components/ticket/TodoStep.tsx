@@ -7,10 +7,11 @@ import { cn } from "../../lib/utils";
 interface TodoStepProps {
   step: TicketStep;
   done: boolean;
+  readonly?: boolean;
   onToggle: (done: boolean) => void;
 }
 
-export function TodoStep({ step, done, onToggle }: TodoStepProps) {
+export function TodoStep({ step, done, readonly = false, onToggle }: TodoStepProps) {
   return (
     <Card
       className={cn(
@@ -24,6 +25,10 @@ export function TodoStep({ step, done, onToggle }: TodoStepProps) {
           <View className="bg-green-100 rounded-full px-2 py-0.5">
             <Text className="text-xs text-green-700">Done</Text>
           </View>
+        ) : readonly ? (
+          <View className="bg-red-100 rounded-full px-2 py-0.5">
+            <Text className="text-xs text-red-700">Not done</Text>
+          </View>
         ) : (
           <View className="bg-yellow-100 rounded-full px-2 py-0.5">
             <Text className="text-xs text-yellow-700">Pending</Text>
@@ -33,11 +38,13 @@ export function TodoStep({ step, done, onToggle }: TodoStepProps) {
 
       <Text className="text-sm text-gray-700">{step.instruction}</Text>
 
-      <Checkbox
-        checked={done}
-        onCheckedChange={onToggle}
-        label="I have completed this in the ERP"
-      />
+      {readonly ? null : (
+        <Checkbox
+          checked={done}
+          onCheckedChange={onToggle}
+          label="I have completed this in the ERP"
+        />
+      )}
     </Card>
   );
 }

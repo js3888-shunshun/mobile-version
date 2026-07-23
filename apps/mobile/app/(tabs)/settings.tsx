@@ -1,6 +1,5 @@
 import { View, Text, Alert } from "react-native";
 import { router } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authClient } from "../../lib/auth-client";
 import { Card } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -12,7 +11,6 @@ import { useOrgStore } from "../../lib/org-store";
 import { debug } from "../../lib/debug";
 
 export default function Settings() {
-  const insets = useSafeAreaInsets();
   const { data: session } = authClient.useSession();
   const { data: orgName } = useOrgName();
   const storedOrg = useOrgStore((s) => s.activeOrg);
@@ -38,7 +36,7 @@ export default function Settings() {
   };
 
   return (
-    <View className="flex-1 bg-gray-50" style={{ paddingBottom: insets.bottom }}>
+    <View className="flex-1 bg-gray-50">
       {/* Profile */}
       <Card className="mx-4 mt-4 flex-row items-center gap-3">
         <Avatar name={user?.name ?? "?"} size="lg" />

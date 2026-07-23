@@ -1,5 +1,6 @@
 import { View, Text, TextInput } from "react-native";
 import type { TicketStep } from "@mobile/shared";
+import type { SendDraftState } from "./StepWalker";
 import { Card } from "../ui/card";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
@@ -7,13 +8,29 @@ import { Button } from "../ui/button";
 interface SendStepProps {
   step: TicketStep;
   editable?: boolean;
+  draftValues?: SendDraftState;
   onDraftEdit?: (field: string, value: string) => void;
   onSkip?: () => void;
+  onBodyFocus?: () => void;
 }
 
-export function SendStep({ step, editable = false, onDraftEdit, onSkip }: SendStepProps) {
+export function SendStep({
+  step,
+  editable = false,
+  draftValues,
+  onDraftEdit,
+  onSkip,
+  onBodyFocus,
+}: SendStepProps) {
   const draft = step.draft;
+
   if (!draft) return null;
+
+  // Use state draft values for editable fields, falling back to original step draft
+  const to = draftValues?.to ?? draft.to.join(", ");
+  const cc = draftValues?.cc ?? draft.cc?.join(", ");
+  const subject = draftValues?.subject ?? draft.subject;
+  const body = draftValues?.body ?? draft.body;
 
   return (
     <Card className="gap-3">
@@ -31,25 +48,25 @@ export function SendStep({ step, editable = false, onDraftEdit, onSkip }: SendSt
         {editable ? (
           <TextInput
             className="text-sm text-black bg-gray-100 rounded-lg px-3 py-2 border border-gray-200"
-            value={draft.to.join(", ")}
+            value={to}
             onChangeText={(t) => onDraftEdit?.("to", t)}
           />
         ) : (
-          <Text className="text-sm text-black py-2">{draft.to.join(", ")}</Text>
+          <Text className="text-sm text-black py-2">{to}</Text>
         )}
       </View>
 
-      {draft.cc && draft.cc.length > 0 ? (
+      {(cc || editable) ? (
         <View>
           <Label>CC</Label>
           {editable ? (
             <TextInput
               className="text-sm text-black bg-gray-100 rounded-lg px-3 py-2 border border-gray-200"
-              value={draft.cc.join(", ")}
+              value={cc}
               onChangeText={(t) => onDraftEdit?.("cc", t)}
             />
           ) : (
-            <Text className="text-sm text-black py-2">{draft.cc.join(", ")}</Text>
+            <Text className="text-sm text-black py-2">{cc}</Text>
           )}
         </View>
       ) : null}
@@ -59,11 +76,11 @@ export function SendStep({ step, editable = false, onDraftEdit, onSkip }: SendSt
         {editable ? (
           <TextInput
             className="text-sm text-black bg-gray-100 rounded-lg px-3 py-2 border border-gray-200"
-            value={draft.subject}
+            value={subject}
             onChangeText={(t) => onDraftEdit?.("subject", t)}
           />
         ) : (
-          <Text className="text-sm text-black py-2">{draft.subject}</Text>
+          <Text className="text-sm text-black py-2">{subject}</Text>
         )}
       </View>
 
@@ -71,15 +88,16 @@ export function SendStep({ step, editable = false, onDraftEdit, onSkip }: SendSt
         <Label>Body</Label>
         {editable ? (
           <TextInput
-            className="text-sm text-black bg-gray-100 rounded-lg px-3 py-2 border border-gray-200 min-h-[100]"
-            value={draft.body}
+            className="text-sm text-black bg-gray-100 rounded-lg px-3 py-2 border border-gray-200 min-h-[120]"
+            value={body}
             onChangeText={(t) => onDraftEdit?.("body", t)}
+            onFocus={onBodyFocus}
             multiline
             textAlignVertical="top"
           />
         ) : (
           <Text className="text-sm text-gray-700 py-2" numberOfLines={6}>
-            {draft.body}
+            {body}
           </Text>
         )}
       </View>

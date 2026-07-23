@@ -1,14 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   View,
   Text,
   Alert,
   ActivityIndicator,
   TouchableOpacity,
-  Pressable,
   Keyboard,
-  ScrollView,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTicket, useCommitTicket, useCloseTicket } from "../../lib/api";
@@ -16,6 +15,7 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
 import { StepWalker, createInitialState, canCommit } from "../../components/ticket/StepWalker";
+import type { StepWalkerState } from "../../components/ticket/StepWalker";
 import { EvidencePanel } from "../../components/ticket/EvidencePanel";
 import { CloseDialog } from "../../components/ticket/CloseDialog";
 import { debug } from "../../lib/debug";
@@ -29,16 +29,98 @@ export default function TicketDetail() {
   const closeTicket = useCloseTicket();
   const [closeOpen, setCloseOpen] = useState(false);
 
+  // Track the ticket ID we last initialized state for
+  const lastInitIdRef = useRef<string | undefined>(undefined);
+  const scrollRef = useRef<KeyboardAwareScrollView>(null);
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    const s1 = Keyboard.addListener("keyboardWillShow", (e) => setKbHeight(e.endCoordinates.height));
+    const s2 = Keyboard.addListener("keyboardWillHide", () => setKbHeight(0));
+    return () => { s1.remove(); s2.remove(); };
+  }, []);
+
+  const handleBodyFocus = () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        (scrollRef.current as any)?.scrollToEnd?.({ animated: true });
+      });
+    });
+  };
+
   // Step walker state (all in-memory, per spec §2.3)
-  const [stepState, setStepState] = useState(() =>
-    createInitialState((ticket?.steps as TicketStep[]) ?? []),
+  const [stepState, setStepState] = useState<StepWalkerState>(() =>
+    createInitialState([]),
   );
 
-  // Reset state when ticket loads
-  const steps = (ticket?.steps as TicketStep[]) ?? [];
+  // Re-initialize state when ticket data loads or ticket ID changes
+  useEffect(() => {
+    if (ticket && ticket.ticketId !== lastInitIdRef.current) {
+      lastInitIdRef.current = ticket.ticketId;
+      setStepState(createInitialState((ticket.steps as TicketStep[]) ?? []));
+    }
+  }, [ticket?.ticketId, !!ticket]);
+
+  // Determine if ticket is readonly (already accepted/closed)
+  const isReadonly = ticket ? ticket.status !== "open" : true;
+
+  // For accepted tickets, use the committed resolution snapshot as display steps
+  const displaySteps: TicketStep[] = useMemo(() => {
+    if (!ticket) return [];
+    const resolution = ticket.resolution as any;
+    if (resolution?.steps?.length > 0) {
+      return resolution.steps as TicketStep[];
+    }
+    return (ticket.steps as TicketStep[]) ?? [];
+  }, [ticket?.status, ticket?.resolution, ticket?.steps]);
+
+  // Pre-fill decisions from resolution for readonly display
+  const resolutionDecisions: Record<string, string> = useMemo(() => {
+    if (!ticket) return {};
+    const decisions: Record<string, string> = {};
+    const resolution = ticket.resolution as any;
+    if (resolution?.decisionPath) {
+      for (const d of resolution.decisionPath) {
+        decisions[d.stepId] = d.chosenOption;
+      }
+    }
+    return decisions;
+  }, [ticket?.resolution]);
+
+  // Pre-fill todos from resolution for readonly display
+  const resolutionTodosDone: Set<string> = useMemo(() => {
+    if (!ticket) return new Set();
+    const resolution = ticket.resolution as any;
+    if (resolution?.todoStepIds) {
+      return new Set(resolution.todoStepIds as string[]);
+    }
+    return new Set();
+  }, [ticket?.resolution]);
+
+  // Human-readable decision summary for the accepted bar
+  const decisionSummary = useMemo(() => {
+    if (!ticket) return "";
+    const parts: string[] = [];
+    const resolution = ticket.resolution as any;
+    if (resolution?.decisionPath) {
+      for (const d of resolution.decisionPath) {
+        const step = (resolution.steps as TicketStep[])?.find(
+          (s) => s.id === d.stepId,
+        );
+        const option = step?.options?.find(
+          (o: { key: string; label: string }) => o.key === d.chosenOption,
+        );
+        if (option) parts.push(option.label);
+      }
+    }
+    return parts.join(" · ");
+  }, [ticket?.resolution]);
+
+  // Derived: steps for the walker and whether commit is allowed
+  const steps = displaySteps;
   const commitEnabled = useMemo(
-    () => canCommit(steps, stepState),
-    [steps, stepState],
+    () => canCommit(steps, stepState) && !isReadonly,
+    [steps, stepState, isReadonly],
   );
 
   // Determine if fact ticket (cannot be dismissed)
@@ -51,6 +133,7 @@ export default function TicketDetail() {
       ([stepId, chosenOption]) => ({ stepId, chosenOption }),
     );
     const skippedStepIds = Array.from(stepState.skipped);
+    const todoStepIds = Array.from(stepState.todosDone);
 
     // Assemble final step payloads
     const finalSteps = steps.map((s) => {
@@ -87,6 +170,7 @@ export default function TicketDetail() {
         steps: finalSteps,
         decisionPath,
         skippedStepIds,
+        todoStepIds,
       });
       debug.info("TicketDetail", `Ticket ${id} committed`);
       Alert.alert("Accepted", "Ticket has been committed successfully.", [
@@ -145,10 +229,9 @@ export default function TicketDetail() {
   };
 
   return (
-    <Pressable
+    <View
       className="flex-1 bg-gray-50"
       style={{ paddingBottom: insets.bottom, paddingTop: insets.top }}
-      onPress={Keyboard.dismiss}
     >
       {/* Header */}
       <View className="flex-row items-center px-2 py-3 bg-white border-b border-gray-200">
@@ -169,10 +252,12 @@ export default function TicketDetail() {
         </Badge>
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollView
+        ref={scrollRef}
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 100 + kbHeight * 0.5 }}
         keyboardShouldPersistTaps="handled"
+        enableAutomaticScroll={false}
       >
         {/* Info card */}
         <Card className="mx-4 mt-4 gap-2">
@@ -208,6 +293,10 @@ export default function TicketDetail() {
             <StepWalker
               steps={steps}
               state={stepState}
+              readonly={isReadonly}
+              decisions={resolutionDecisions}
+              todosDone={resolutionTodosDone}
+              onBodyFocus={handleBodyFocus}
               onDecisionChange={(stepId, key) =>
                 setStepState((s) => ({
                   ...s,
@@ -234,7 +323,11 @@ export default function TicketDetail() {
                   const idx = edits.findIndex(
                     (e) => e.targetIndex === ti && e.field === field,
                   );
-                  if (idx >= 0) edits[idx] = { ...edits[idx], newValue: val };
+                  if (idx >= 0) {
+                    edits[idx] = { ...edits[idx], newValue: val };
+                  } else {
+                    edits.push({ targetIndex: ti, field, newValue: val });
+                  }
                   return {
                     ...s,
                     editDrafts: { ...s.editDrafts, [stepId]: edits },
@@ -260,7 +353,7 @@ export default function TicketDetail() {
             <Text className="text-sm text-gray-500 italic">No steps defined</Text>
           </Card>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Bottom bar — only for open tickets */}
       {ticket.status === "open" ? (
@@ -287,7 +380,7 @@ export default function TicketDetail() {
         </View>
       ) : ticket.status === "accepted" ? (
         <View
-          className="absolute bottom-0 left-0 right-0 bg-green-50 border-t border-green-200 px-4 py-4"
+          className="absolute bottom-0 left-0 right-0 bg-green-50 border-t border-green-200 px-4 py-3"
           style={{ paddingBottom: insets.bottom + 8 }}
         >
           <Text className="text-center text-green-700 font-semibold">
@@ -296,6 +389,11 @@ export default function TicketDetail() {
               ? `on ${new Date(ticket.resolvedAt).toLocaleDateString()}`
               : ""}
           </Text>
+          {decisionSummary ? (
+            <Text className="text-center text-green-600 text-xs mt-0.5">
+              {decisionSummary}
+            </Text>
+          ) : null}
         </View>
       ) : ticket.status === "closed" ? (
         <View
@@ -316,6 +414,6 @@ export default function TicketDetail() {
         isPending={closeTicket.isPending}
         isFactTicket={isFactTicket}
       />
-    </Pressable>
+    </View>
   );
 }
