@@ -34,7 +34,7 @@ You also need these **accounts**:
 
 - **Expo account** (free) — sign up at [expo.dev](https://expo.dev/signup)
 - **Apple Developer account** ($99/year) — enroll at [developer.apple.com](https://developer.apple.com/develop/)  
-  *Required to install the app on a physical iPhone. If you don't have one, you can still run the app in Expo Go for basic testing (push notifications will not work in Expo Go).*
+  *Required to build and install the app on a physical iPhone.*
 
 ---
 
@@ -227,20 +227,16 @@ After Metro finishes bundling, you'll see a QR code and:
 › Scan the QR code above with Expo Go (Android) or the Camera app (iOS)
 ```
 
-### 6.1 Test on Phone with Expo Go (quick test, no build required)
+### 6.1 About Expo Go
 
-1. Install **Expo Go** from the App Store on your iPhone.
-2. Make sure your phone and computer are on the **same WiFi network**.
-3. Open the iPhone Camera app and scan the QR code in the terminal.
-4. Tap the notification that appears → Expo Go opens and loads the app.
-
-> **Limitations of Expo Go:** Push notifications will NOT work. better-auth cookie-based auth may be unreliable. Use Expo Go for quick UI checks. For full functionality, follow section 7 to build a development client.
+> **Expo Go does not support this project.**  
+> As of SDK 57, Expo Go has been stuck in App Store review for several releases and is not available for the current SDK version. You must use an EAS Development Build (section 7) to run the app on a physical iPhone. The Expo dev server below still runs — it serves the JavaScript bundle to your development build, not to Expo Go.
 
 ---
 
 ## 7. Build & Install on iPhone
 
-For full functionality (push notifications, auth), you need an **EAS Development Build** installed directly on your device.
+Since Expo Go is unavailable for SDK 57, you need an **EAS Development Build** installed directly on your device.
 
 ### 7.1 Get Your iPhone UDID
 
@@ -430,7 +426,6 @@ Then re-run `npx expo start`.
 1. On the phone: **Settings → Mobile Tickets → Notifications → Allow Notifications** (must be ON).
 2. Open the app, go to the ticket list. Check Terminal 1 server logs for: `[push] active push tokens found: 1` or more. If it says `0`, the device hasn't registered its push token — kill and reopen the app.
 3. If you are the only user in the organization, check that the `sender exclusion` logic in `push.ts` is removed (line 30–32 should only have `eq(member.organizationId, orgId)` without `ne(member.userId, actorId)`).
-4. Expo Go does NOT support push notifications — use a development build.
 
 ### "DATABASE_URL is not set"
 
